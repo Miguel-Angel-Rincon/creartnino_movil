@@ -913,7 +913,54 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
     setState(() => isSaving = false);
 
     if (res.statusCode == 200 || res.statusCode == 201) {
-      mostrarSnackBar(context, "✅ Pedido creado correctamente");
+      // 🔹 Descontar stock producto por producto
+      for (final entry in widget.carrito.entries) {
+        final productoId = entry.key.id;
+        final cantidadComprada = entry.value;
+
+        try {
+          // Obtener producto actual
+          final respProd = await http.get(
+            Uri.parse(
+              "https://www.apicreartnino.somee.com/api/Productos/Obtener/$productoId",
+            ),
+          );
+          if (respProd.statusCode != 200) continue;
+
+          final producto = jsonDecode(respProd.body);
+
+          // Crear objeto actualizado con stock reducido
+          final actualizado = {
+            "IdProducto": producto["IdProducto"],
+            "CategoriaProducto": producto["CategoriaProducto"],
+            "Nombre": producto["Nombre"],
+            "Imagen": producto["Imagen"],
+            "Cantidad": (producto["Cantidad"] ?? 0) - cantidadComprada,
+            "Marca": producto["Marca"],
+            "Precio": producto["Precio"],
+            "Estado": producto["Estado"],
+          };
+
+          // PUT actualizar stock
+          final respUpd = await http.put(
+            Uri.parse(
+              "https://www.apicreartnino.somee.com/api/Productos/Actualizar/$productoId",
+            ),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode(actualizado),
+          );
+
+          if (respUpd.statusCode != 200) {
+            debugPrint(
+              "❌ Error al actualizar stock de $productoId: ${respUpd.body}",
+            );
+          }
+        } catch (e) {
+          debugPrint("⚠️ Error procesando stock de producto $productoId: $e");
+        }
+      }
+
+      mostrarSnackBar(context, "✅ Pedido creado y stock actualizado");
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const ClienteHomePageConCategorias()),

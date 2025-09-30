@@ -124,6 +124,7 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
       }
     } catch (e) {
       print("❌ Excepción al obtener pedidos: $e");
+      if (!mounted) return;
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("❌ Error al cargar pedidos")),
@@ -171,7 +172,12 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
       (p) => p['IdPedido'] == idPedido,
       orElse: () => null,
     );
-    if (pedido == null) return;
+    if (pedido == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("❌ Pedido no encontrado")));
+      return;
+    }
 
     final body = {
       "idPedido": pedido['IdPedido'],
@@ -184,11 +190,12 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
       "valorRestante": pedido['ValorRestante'],
       "totalPedido": pedido['TotalPedido'],
       "comprobantePago": pedido['ComprobantePago'],
-      "idEstado": 6,
+      "idEstado": 6, // ✅ estado anulado
     };
 
     try {
-      final response = await http.put(
+      // 1️⃣ Actualizar estado del pedido
+      final res = await http.put(
         Uri.parse(
           'https://www.apicreartnino.somee.com/api/Pedidos/Actualizar/$idPedido',
         ),
@@ -196,19 +203,75 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
         body: jsonEncode(body),
       );
 
-      if (response.statusCode == 200) {
-        fetchPedidosDelCliente();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Pedido anulado exitosamente")),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("❌ No se pudo anular el pedido")),
-        );
+      if (res.statusCode != 200) {
+        throw Exception("No se pudo anular el pedido");
       }
-    } catch (_) {
+
+      // 2️⃣ Obtener detalles del pedido
+      final rDet = await http.get(
+        Uri.parse(
+          "https://www.apicreartnino.somee.com/api/Detalles_Pedido/Lista",
+        ),
+      );
+
+      if (rDet.statusCode != 200) {
+        throw Exception("No se pudieron obtener los detalles");
+      }
+
+      final allDetalles = jsonDecode(rDet.body) as List;
+      final detalles = allDetalles
+          .where((d) => d['IdPedido'] == idPedido)
+          .toList();
+
+      // 3️⃣ Devolver stock de cada producto
+      for (final det in detalles) {
+        final rProd = await http.get(
+          Uri.parse(
+            "https://www.apicreartnino.somee.com/api/Productos/Obtener/${det['IdProducto']}",
+          ),
+        );
+        if (rProd.statusCode != 200) continue;
+
+        final producto = jsonDecode(rProd.body);
+
+        final actualizado = {
+          "IdProducto": producto['IdProducto'],
+          "CategoriaProducto": producto['CategoriaProducto'],
+          "Nombre": producto['Nombre'],
+          "Imagen": producto['Imagen'],
+          "Cantidad":
+              (producto['Cantidad'] ?? 0) +
+              (det['Cantidad'] ?? 0), // ✅ sumamos stock
+          "Marca": producto['Marca'],
+          "Precio": producto['Precio'],
+          "Estado": producto['Estado'],
+        };
+
+        final rUpd = await http.put(
+          Uri.parse(
+            "https://www.apicreartnino.somee.com/api/Productos/Actualizar/${det['IdProducto']}",
+          ),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(actualizado),
+        );
+
+        if (rUpd.statusCode != 200) {
+          debugPrint(
+            "❌ Error al devolver stock del producto ${det['IdProducto']}: ${rUpd.body}",
+          );
+        }
+      }
+
+      // 4️⃣ Refrescar pedidos
+      await fetchPedidosDelCliente();
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Error al conectar con el servidor")),
+        const SnackBar(content: Text("✅ Pedido anulado y stock devuelto")),
+      );
+    } catch (e) {
+      debugPrint("❌ Error en anularPedido: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("❌ No se pudo anular el pedido")),
       );
     }
   }
@@ -223,6 +286,10 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
     if (nombre.contains('entregado')) return Colors.green;
     if (nombre.contains('anulado')) return Colors.redAccent;
     return Colors.grey;
+  }
+
+  bool _puedeAnular(int idEstado) {
+    return !(idEstado == 4 || idEstado == 5 || idEstado == 6 || idEstado == 7);
   }
 
   List<dynamic> get _pedidosFiltrados {
@@ -511,7 +578,7 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                                         p['IdPedido'],
                                                       ),
                                                 ),
-                                                if (p['IdEstado'] != 6)
+                                                if (_puedeAnular(p['IdEstado']))
                                                   IconButton(
                                                     icon: const Icon(
                                                       Icons.cancel,

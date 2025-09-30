@@ -4,7 +4,15 @@ import 'dart:convert';
 
 class VerificarCodigoPage extends StatefulWidget {
   final String correo;
-  const VerificarCodigoPage({required this.correo});
+  final Map<String, dynamic> usuarioPayload;
+  final Map<String, dynamic> clientePayload;
+
+  const VerificarCodigoPage({
+    required this.correo,
+    required this.usuarioPayload,
+    required this.clientePayload,
+    Key? key,
+  }) : super(key: key);
 
   @override
   State<VerificarCodigoPage> createState() => _VerificarCodigoPageState();
@@ -13,34 +21,134 @@ class VerificarCodigoPage extends StatefulWidget {
 class _VerificarCodigoPageState extends State<VerificarCodigoPage> {
   final TextEditingController codigoController = TextEditingController();
   bool _loading = false;
+  bool _resendLoading = false;
+
+  @override
+  void dispose() {
+    codigoController.dispose();
+    super.dispose();
+  }
 
   Future<void> verificarCodigo() async {
-    setState(() => _loading = true);
-
-    final url = Uri.parse(
+    final verifyUrl = Uri.parse(
       'http://www.apicreartnino.somee.com/api/Usuarios/VerificarCodigoCorreo',
     );
 
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "correo": widget.correo,
-        "codigo": codigoController.text,
-      }),
-    );
+    setState(() => _loading = true);
 
-    setState(() => _loading = false);
-
-    if (response.statusCode == 200) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ Correo verificado correctamente')),
+    try {
+      final verifyResp = await http.post(
+        verifyUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "correo": widget.correo,
+          "codigo": codigoController.text,
+        }),
       );
+
+      if (verifyResp.statusCode < 200 || verifyResp.statusCode >= 300) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Código incorrecto: ${verifyResp.body}')),
+        );
+        return;
+      }
+
+      // Si el código es correcto, creamos primero el usuario y luego el cliente
+      final usuarioUrl = Uri.parse(
+        "http://www.apicreartnino.somee.com/api/Usuarios/Crear",
+      );
+      final usuarioResp = await http.post(
+        usuarioUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(widget.usuarioPayload),
+      );
+
+      if (usuarioResp.statusCode < 200 || usuarioResp.statusCode >= 300) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al crear usuario: ${usuarioResp.body}'),
+          ),
+        );
+        return;
+      }
+
+      final clienteUrl = Uri.parse(
+        "http://www.apicreartnino.somee.com/api/Clientes/Crear",
+      );
+      final clienteResp = await http.post(
+        clienteUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(widget.clientePayload),
+      );
+
+      setState(() => _loading = false);
+
+      if (clienteResp.statusCode < 200 || clienteResp.statusCode >= 300) {
+        // Nota: aquí detectamos que el usuario ya se creó pero el cliente falló.
+        // Si tu backend tiene una ruta para eliminar o deshacer el usuario, deberías llamarla aquí.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al crear cliente: ${clienteResp.body}'),
+          ),
+        );
+        return;
+      }
+
+      // Todo ok
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Correo verificado y cuenta creada correctamente'),
+        ),
+      );
+
       Navigator.pushReplacementNamed(context, '/login');
-    } else {
+    } catch (e) {
+      setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('❌ Código incorrecto')));
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+
+  Future<void> reenviarCodigo() async {
+    setState(() => _resendLoading = true);
+    final url = Uri.parse(
+      "http://www.apicreartnino.somee.com/api/Usuarios/EnviarCodigoCorreo",
+    );
+
+    try {
+      var resp = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(widget.correo),
+      );
+
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        resp = await http.post(
+          url,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"correo": widget.correo}),
+        );
+      }
+
+      setState(() => _resendLoading = false);
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Código reenviado. Revisa tu correo.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al reenviar: ${resp.body}')),
+        );
+      }
+    } catch (e) {
+      setState(() => _resendLoading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al reenviar: $e')));
     }
   }
 
@@ -123,8 +231,6 @@ class _VerificarCodigoPageState extends State<VerificarCodigoPage> {
                     ),
                   ),
                   const SizedBox(height: 30),
-
-                  // Loader mientras se verifica
                   if (_loading)
                     const Padding(
                       padding: EdgeInsets.only(bottom: 20),
@@ -134,8 +240,6 @@ class _VerificarCodigoPageState extends State<VerificarCodigoPage> {
                         ),
                       ),
                     ),
-
-                  // Botón con degradado pastel
                   Container(
                     width: double.infinity,
                     height: 50,
@@ -150,7 +254,7 @@ class _VerificarCodigoPageState extends State<VerificarCodigoPage> {
                         BoxShadow(
                           color: Colors.black26,
                           blurRadius: 6,
-                          offset: const Offset(0, 3),
+                          offset: Offset(0, 3),
                         ),
                       ],
                     ),
@@ -179,12 +283,12 @@ class _VerificarCodigoPageState extends State<VerificarCodigoPage> {
                   ),
                   const SizedBox(height: 15),
                   TextButton(
-                    onPressed: () {
-                      // Aquí podrías implementar reenviar código si tu API lo permite
-                    },
-                    child: const Text(
-                      "¿No recibiste el código? Reenviar",
-                      style: TextStyle(color: Colors.pinkAccent),
+                    onPressed: _resendLoading ? null : reenviarCodigo,
+                    child: Text(
+                      _resendLoading
+                          ? "Reenviando..."
+                          : "¿No recibiste el código? Reenviar",
+                      style: const TextStyle(color: Colors.pinkAccent),
                     ),
                   ),
                 ],

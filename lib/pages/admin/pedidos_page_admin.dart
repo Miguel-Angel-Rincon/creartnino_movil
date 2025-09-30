@@ -129,6 +129,14 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
           pedidos = List<Pedido>.from(
             pedidosData.map((p) => Pedido.fromJson(p, estadosMap, clientesMap)),
           );
+
+          // ✅ Orden descendente por IdPedido (últimos pedidos primero)
+          pedidos.sort((a, b) => b.idPedido.compareTo(a.idPedido));
+
+          // Si quieres por fecha en vez de IdPedido:
+          // pedidos.sort((a, b) =>
+          //   DateTime.parse(b.fechaPedido).compareTo(DateTime.parse(a.fechaPedido)));
+
           isLoading = false;
         });
       } else {
@@ -160,6 +168,17 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
       return [];
     }
   }
+
+  int _paginaActual = 1;
+  int _itemsPorPagina = 3;
+
+  List<Pedido> get _pedidosPaginados {
+    final inicio = (_paginaActual - 1) * _itemsPorPagina;
+    final fin = inicio + _itemsPorPagina;
+    return pedidos.sublist(inicio, fin > pedidos.length ? pedidos.length : fin);
+  }
+
+  int get _totalPaginas => (pedidos.length / _itemsPorPagina).ceil();
 
   void mostrarDetalleModal(BuildContext context, int idPedido) {
     showModalBottomSheet(
@@ -329,13 +348,56 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
     return Colors.grey;
   }
 
+  bool _puedeAnular(int idEstado) {
+    // No se puede anular si está en: Entregado (5), En proceso de entrega (4),
+    // Anulado (6) o Venta Directa (7)
+    return !(idEstado == 4 || idEstado == 5 || idEstado == 6 || idEstado == 7);
+  }
+
   void _mostrarMenuEstados(Pedido pedido) {
+    final estadoActual =
+        pedido.idEstadoNavigation?['NombreEstado']?.toString().toLowerCase() ??
+        '';
+
+    List<MapEntry<int, dynamic>> estadosFiltrados = [];
+
+    if (estadoActual.contains("proceso de entrega")) {
+      // 👉 solo se puede pasar a Entregado
+      estadosFiltrados = estadosMap.entries.where((entry) {
+        final nombre =
+            entry.value['NombreEstado']?.toString().toLowerCase() ?? '';
+        return nombre.contains("entregado");
+      }).toList();
+    } else if (estadoActual.contains("entregado") ||
+        estadoActual.contains("anulado") ||
+        estadoActual.contains("venta directa") ||
+        estadoActual.contains("producción")) {
+      // 👉 no se puede cambiar más
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("⚠️ Este pedido no puede cambiar de estado"),
+        ),
+      );
+      return;
+    } else {
+      // 👉 en los demás casos solo "Primer pago" y "En proceso"
+      estadosFiltrados = estadosMap.entries.where((entry) {
+        final nombre =
+            entry.value['NombreEstado']?.toString().toLowerCase() ?? '';
+        return nombre == "primer pago" || nombre == "en proceso";
+      }).toList();
+    }
+
+    if (estadosFiltrados.isEmpty) {
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       builder: (context) {
         return ListView(
           shrinkWrap: true,
-          children: estadosMap.entries.map((entry) {
+          children: estadosFiltrados.map((entry) {
             return ListTile(
               title: Text(entry.value['NombreEstado'] ?? ''),
               onTap: () {
@@ -389,6 +451,7 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
   }
 
   Future<void> anularPedido(Pedido pedido) async {
+    // 1️⃣ Buscar estado "Anulado"
     final anulado = estadosMap.entries.firstWhere(
       (e) => e.value['NombreEstado']?.toString().toLowerCase() == 'anulado',
       orElse: () => MapEntry(-1, {}),
@@ -401,6 +464,7 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
       return;
     }
 
+    // 2️⃣ Confirmación
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -420,8 +484,100 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
       ),
     );
 
-    if (confirmado == true) {
-      await actualizarEstado(pedido, anulado.key);
+    if (confirmado != true) return;
+
+    try {
+      // 3️⃣ Actualizar estado del pedido a "Anulado"
+      final body = {
+        "idPedido": pedido.idPedido,
+        "idCliente": pedido.idCliente,
+        "metodoPago": pedido.metodoPago,
+        "fechaPedido": pedido.fechaPedido,
+        "fechaEntrega": pedido.fechaEntrega,
+        "descripcion": pedido.descripcion,
+        "valorInicial": pedido.valorInicial,
+        "valorRestante": pedido.valorRestante,
+        "totalPedido": pedido.totalPedido,
+        "comprobantePago": pedido.comprobantePago,
+        "idEstado": anulado.key, // 👈 tomado de estadosMap
+      };
+
+      final res = await http.put(
+        Uri.parse(
+          'https://www.apicreartnino.somee.com/api/Pedidos/Actualizar/${pedido.idPedido}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+
+      if (res.statusCode != 200) {
+        throw Exception("No se pudo anular el pedido");
+      }
+
+      // 4️⃣ Obtener detalles del pedido
+      final rDet = await http.get(
+        Uri.parse(
+          "https://www.apicreartnino.somee.com/api/Detalles_Pedido/Lista",
+        ),
+      );
+
+      if (rDet.statusCode != 200) {
+        throw Exception("No se pudieron obtener los detalles");
+      }
+
+      final allDetalles = jsonDecode(rDet.body) as List;
+      final detalles = allDetalles
+          .where((d) => d['IdPedido'] == pedido.idPedido)
+          .toList();
+
+      // 5️⃣ Devolver stock de cada producto
+      for (final det in detalles) {
+        final rProd = await http.get(
+          Uri.parse(
+            "https://www.apicreartnino.somee.com/api/Productos/Obtener/${det['IdProducto']}",
+          ),
+        );
+        if (rProd.statusCode != 200) continue;
+
+        final producto = jsonDecode(rProd.body);
+
+        final actualizado = {
+          "IdProducto": producto['IdProducto'],
+          "CategoriaProducto": producto['CategoriaProducto'],
+          "Nombre": producto['Nombre'],
+          "Imagen": producto['Imagen'],
+          "Cantidad": (producto['Cantidad'] ?? 0) + (det['Cantidad'] ?? 0),
+          "Marca": producto['Marca'],
+          "Precio": producto['Precio'],
+          "Estado": producto['Estado'],
+        };
+
+        final rUpd = await http.put(
+          Uri.parse(
+            "https://www.apicreartnino.somee.com/api/Productos/Actualizar/${det['IdProducto']}",
+          ),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(actualizado),
+        );
+
+        if (rUpd.statusCode != 200) {
+          debugPrint(
+            "❌ Error al devolver stock del producto ${det['IdProducto']}: ${rUpd.body}",
+          );
+        }
+      }
+
+      // 6️⃣ Refrescar pedidos
+      await fetchPedidos();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ Pedido anulado y stock devuelto")),
+      );
+    } catch (e) {
+      debugPrint("❌ Error en anularPedido: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("❌ No se pudo anular el pedido")),
+      );
     }
   }
 
@@ -487,9 +643,9 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: pedidos.length,
+                    itemCount: _pedidosPaginados.length,
                     itemBuilder: (context, index) {
-                      final pedido = pedidos[index];
+                      final pedido = _pedidosPaginados[index];
                       final cliente =
                           pedido.idClienteNavigation?['NombreCompleto']
                               ?.toLowerCase() ??
@@ -589,14 +745,15 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                                         );
                                       },
                                     ),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.cancel,
-                                        color: Colors.redAccent,
+                                    if (_puedeAnular(pedido.idEstado))
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.cancel,
+                                          color: Colors.redAccent,
+                                        ),
+                                        tooltip: 'Anular pedido',
+                                        onPressed: () => anularPedido(pedido),
                                       ),
-                                      tooltip: 'Anular pedido',
-                                      onPressed: () => anularPedido(pedido),
-                                    ),
                                   ],
                                 ),
                                 if (isExpanded) ...[
@@ -621,6 +778,77 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                     },
                   ),
                 ),
+                if (pedidos.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 10.0,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black12,
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Botón anterior
+                            CircleAvatar(
+                              backgroundColor: _paginaActual > 1
+                                  ? Colors.blueAccent
+                                  : Colors.grey[300],
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.arrow_back,
+                                  color: Colors.white,
+                                ),
+                                onPressed: _paginaActual > 1
+                                    ? () => setState(() => _paginaActual--)
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+
+                            // Texto de página
+                            Text(
+                              "Página $_paginaActual de $_totalPaginas",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+
+                            // Botón siguiente
+                            CircleAvatar(
+                              backgroundColor: _paginaActual < _totalPaginas
+                                  ? const Color.fromARGB(255, 243, 160, 242)
+                                  : Colors.grey[300],
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.arrow_forward,
+                                  color: Colors.white,
+                                ),
+                                onPressed: _paginaActual < _totalPaginas
+                                    ? () => setState(() => _paginaActual++)
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
     );

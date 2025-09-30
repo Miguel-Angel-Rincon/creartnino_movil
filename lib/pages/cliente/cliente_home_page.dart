@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 
 import '../../widgets/pastel_bottom_navbar.dart';
 import '../perfil/perfil_page.dart';
-// ✅ Asegúrate que este sea el nombre correcto del archivo
 import '../../models/categoria.dart';
 import '../../models/producto.dart';
 import '../../screens/productos_page.dart';
@@ -82,9 +81,11 @@ class _ClienteHomePageConCategoriasState
       if (response.statusCode == 200) {
         final List decoded = json.decode(response.body);
         final lista = decoded.map((e) => Categoria.fromJson(e)).toList();
+
         setState(() {
-          categorias = lista;
-          categoriasFiltradas = lista;
+          // ✅ Solo categorías activas
+          categorias = lista.where((c) => c.estado).toList();
+          categoriasFiltradas = categorias;
           isLoadingCategorias = false;
         });
       } else {
@@ -105,7 +106,7 @@ class _ClienteHomePageConCategoriasState
     setState(() {
       searchText = texto.toLowerCase();
       categoriasFiltradas = categorias
-          .where((c) => c.nombre.toLowerCase().contains(searchText))
+          .where((c) => c.estado && c.nombre.toLowerCase().contains(searchText))
           .toList();
     });
   }
@@ -146,107 +147,112 @@ class _ClienteHomePageConCategoriasState
       return const Center(child: Text('No hay categorías disponibles.'));
     }
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                const Text(
-                  'Selecciona la categoría de tu interés',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  onChanged: filtrarCategorias,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText: 'Buscar',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: GridView.builder(
-              itemCount: categoriasFiltradas.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.85,
+    return RefreshIndicator(
+      onRefresh: fetchCategorias, // ✅ Deslizar para refrescar
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
               ),
-              itemBuilder: (context, index) {
-                final categoria = categoriasFiltradas[index];
-                final imagenUrl =
-                    imagenesCategoria[categoria.id] ?? imagenDefault;
-
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ProductosPage(
-                          categoriaId: categoria.id,
-                          categoriaNombre: categoria.nombre,
-                          carrito: carritoGlobal,
-                        ),
+              child: Column(
+                children: [
+                  const Text(
+                    'Selecciona la categoría de tu interés',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    onChanged: filtrarCategorias,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: 'Buscar',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    );
-                  },
-                  child: Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      children: [
-                        ClipRRect(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(16),
-                          ),
-                          child: Image.network(
-                            imagenUrl,
-                            height: 100,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(
-                                  height: 100,
-                                  color: Colors.grey[300],
-                                  child: const Icon(
-                                    Icons.broken_image,
-                                    size: 40,
-                                  ),
-                                ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            categoria.nombre,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Expanded(
+              child: GridView.builder(
+                itemCount: categoriasFiltradas.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.85,
+                ),
+                itemBuilder: (context, index) {
+                  final categoria = categoriasFiltradas[index];
+                  final imagenUrl =
+                      imagenesCategoria[categoria.id] ?? imagenDefault;
+
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ProductosPage(
+                            categoriaId: categoria.id,
+                            categoriaNombre: categoria.nombre,
+                            carrito: carritoGlobal,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(16),
+                            ),
+                            child: Image.network(
+                              imagenUrl,
+                              height: 100,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                    height: 100,
+                                    color: Colors.grey[300],
+                                    child: const Icon(
+                                      Icons.broken_image,
+                                      size: 40,
+                                    ),
+                                  ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Text(
+                              categoria.nombre,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -259,9 +265,7 @@ class _ClienteHomePageConCategoriasState
 
     final List<Widget> pages = [
       _buildCategoriasView(), // Inicio
-      PedidosPageCliente(
-        numDocumentoUsuario: numDocumento ?? '',
-      ), // ✅ Corregido
+      PedidosPageCliente(numDocumentoUsuario: numDocumento ?? ''),
       const PerfilPage(),
     ];
 

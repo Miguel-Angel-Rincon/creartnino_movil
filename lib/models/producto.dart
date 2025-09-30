@@ -2,11 +2,13 @@ class Producto {
   final int id;
   final int categoriaId;
   final String nombre;
-  final int imagenId;
+  final int imagenId; // ese campo “Imagen” del JSON
   final int cantidad;
   final String marca;
   final double precio;
   final bool estado;
+
+  String imagenUrl; // vamos a asignarle esta URL luego
 
   Producto({
     required this.id,
@@ -17,6 +19,7 @@ class Producto {
     required this.marca,
     required this.precio,
     required this.estado,
+    this.imagenUrl = '',
   });
 
   factory Producto.fromJson(Map<String, dynamic> json) {
@@ -31,15 +34,4 @@ class Producto {
       estado: json['Estado'],
     );
   }
-
-  @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        other is Producto && runtimeType == other.runtimeType && id == other.id;
-  }
-
-  @override
-  int get hashCode => id.hashCode;
-
-  int get idProducto => id;
 }

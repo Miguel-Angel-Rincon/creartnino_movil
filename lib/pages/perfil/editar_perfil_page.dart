@@ -32,8 +32,12 @@ class _EditarPerfilPageState extends State<EditarPerfilPage> {
   List<Map<String, dynamic>> todasCiudades = [];
   List<Map<String, dynamic>> ciudadesFiltradas = [];
 
-  final List<String> tiposDocumento = ['RC', 'TI', 'CC', 'CE', 'PP', 'PEP'];
-
+  final List<Map<String, String>> tiposDocumento = [
+    {"abreviatura": "TI", "nombre": "Tarjeta de Identidad"},
+    {"abreviatura": "CC", "nombre": "Cédula de Ciudadanía"},
+    {"abreviatura": "CE", "nombre": "Cédula de Extranjería"},
+    {"abreviatura": "PEP", "nombre": "Permiso Especial de Permanencia"},
+  ];
   @override
   void initState() {
     super.initState();
@@ -232,15 +236,30 @@ class _EditarPerfilPageState extends State<EditarPerfilPage> {
                           "Tipo de Documento",
                           tipoDocumentoSeleccionado,
                           tiposDocumento.map((tipo) {
-                            return DropdownMenuItem(
-                              value: tipo,
-                              child: Text(tipo),
+                            return DropdownMenuItem<String>(
+                              value:
+                                  tipo["abreviatura"], // se guarda la abreviatura
+                              child: SizedBox(
+                                width:
+                                    200, // 👈 ajusta este ancho según tu diseño
+                                child: Text(
+                                  tipo["nombre"]!,
+                                  overflow: TextOverflow
+                                      .ellipsis, // muestra "..." si se pasa
+                                  maxLines: 1,
+                                  softWrap: false,
+                                ),
+                              ),
                             );
                           }).toList(),
                           icon: Icons.badge,
-                          onChanged: (value) =>
-                              setState(() => tipoDocumentoSeleccionado = value),
+                          onChanged: (value) {
+                            setState(() {
+                              tipoDocumentoSeleccionado = value;
+                            });
+                          },
                         ),
+
                         campoTexto(
                           "Número Documento",
                           numDocCtrl,
@@ -362,11 +381,73 @@ class _EditarPerfilPageState extends State<EditarPerfilPage> {
         controller: controller,
         obscureText: esPassword,
         validator: (value) {
-          if (label == "Dirección" ||
-              label == "Nueva Contraseña" ||
-              label == "Confirmar Contraseña")
+          final input = value?.trim() ?? "";
+
+          // Dirección es opcional
+          if (label == "Dirección") return null;
+
+          // Nueva contraseña: solo valida si se está editando
+          if (label == "Nueva Contraseña") {
+            if (input.isEmpty) return null;
+            if (input.length < 8) return "Mínimo 8 caracteres";
+            if (!RegExp(
+              r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[\W_]).+$',
+            ).hasMatch(input)) {
+              return "Debe incluir mayúscula, minúscula, número y carácter especial";
+            }
+          }
+
+          // Confirmar contraseña: solo valida si hay algo en "Nueva Contraseña"
+          if (label == "Confirmar Contraseña") {
+            if (contrasenaCtrl.text.isNotEmpty &&
+                input != contrasenaCtrl.text.trim()) {
+              return "Las contraseñas no coinciden";
+            }
             return null;
-          return (value == null || value.isEmpty) ? 'Campo requerido' : null;
+          }
+
+          // Validaciones generales
+          if (input.isEmpty) return 'Campo requerido';
+
+          switch (label) {
+            case "Número Documento":
+              if (!RegExp(r'^[0-9]+$').hasMatch(input)) {
+                return "Solo números";
+              }
+              if (input.length < 7 || input.length > 11) {
+                return "Debe tener entre 7 y 11 dígitos";
+              }
+              if (RegExp(r'^0+$').hasMatch(input)) {
+                return "No puede ser solo ceros";
+              }
+              break;
+
+            case "Nombre Completo":
+              if (input.length < 3) return "Ingresa un nombre válido";
+              if (!RegExp(r'^[a-zA-ZÁÉÍÓÚáéíóúñÑ ]+$').hasMatch(input)) {
+                return "Solo letras y espacios";
+              }
+              break;
+
+            case "Celular":
+              if (!RegExp(r'^[0-9]{10}$').hasMatch(input)) {
+                return "Debe tener 10 dígitos";
+              }
+              if (RegExp(r'^0+$').hasMatch(input)) {
+                return "No puede ser solo ceros";
+              }
+              break;
+
+            case "Correo":
+              if (!RegExp(
+                r'^[\w\.\-]+@([\w\-]+\.)+[a-zA-Z]{2,4}$',
+              ).hasMatch(input)) {
+                return "Correo inválido";
+              }
+              break;
+          }
+
+          return null;
         },
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: Colors.pinkAccent),

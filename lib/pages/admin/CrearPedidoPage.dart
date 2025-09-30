@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -25,6 +25,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
 
   List<dynamic> clientes = [];
   List<dynamic> productos = [];
+  List<dynamic> categorias = []; // <-- NUEVO: categorias
   List<Map<String, dynamic>> productosSeleccionados = [];
 
   final List<String> metodosPago = [
@@ -50,12 +51,21 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     final resProductos = await http.get(
       Uri.parse("https://www.apicreartnino.somee.com/api/Productos/Lista"),
     );
+    final resCategorias = await http.get(
+      Uri.parse(
+        "https://www.apicreartnino.somee.com/api/Categoria_productos/Lista",
+      ),
+    );
 
     if (resClientes.statusCode == 200 &&
         resUsuarios.statusCode == 200 &&
-        resProductos.statusCode == 200) {
+        resProductos.statusCode == 200 &&
+        resCategorias.statusCode == 200) {
       final listaClientes = jsonDecode(resClientes.body);
       final listaUsuarios = jsonDecode(resUsuarios.body);
+      final listaProductos = jsonDecode(resProductos.body);
+      final listaCategorias = jsonDecode(resCategorias.body);
+
       final documentosClientes = listaClientes
           .map((c) => c['NumDocumento'].toString())
           .toSet();
@@ -83,13 +93,17 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
           )
           .toList();
 
+      if (!mounted) return; // 👈 FIX
       setState(() {
         clientes = [
           ...listaClientes.map((c) => {...c, "EsUsuarioNuevo": false}),
           ...usuariosConRol4,
         ];
-        productos = jsonDecode(resProductos.body);
+        productos = listaProductos;
+        categorias = listaCategorias;
       });
+    } else {
+      debugPrint("Error fetching data");
     }
   }
 
@@ -112,7 +126,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     final image = await picker.pickImage(source: ImageSource.gallery);
     if (image == null) return;
 
-    setState(() => _subiendoImagen = true);
+    if (!mounted) return;
+    setState(() => _subiendoImagen = false);
 
     final url = Uri.parse(
       "https://api.cloudinary.com/v1_1/angelr10/image/upload",
@@ -126,41 +141,55 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(resBody);
+      if (!mounted) return;
       setState(() => _comprobantePago = data['secure_url']);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("✅ Imagen subida correctamente")));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ Imagen subida correctamente")),
+      );
     } else {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("❌ Error al subir imagen")));
+      ).showSnackBar(const SnackBar(content: Text("❌ Error al subir imagen")));
     }
+    if (!mounted) return;
     setState(() => _subiendoImagen = false);
   }
 
+  // ---------- NUEVO: seleccionar por categoría -> luego producto (modal)
   Future<void> _seleccionarProducto() async {
-    final producto = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => ListView.builder(
-        itemCount: productos.length,
-        itemBuilder: (context, index) {
-          final p = productos[index];
-          return ListTile(
-            title: Text(p['Nombre']),
-            subtitle: Text("Precio: \$${p['Precio']}"),
-            onTap: () => Navigator.pop(context, p),
-          );
-        },
-      ),
-    );
+    if (categorias.isEmpty) {
+      // si por alguna razón no cargaron, intentar recargar
+      await fetchData();
+      if (categorias.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("⚠️ No se encontraron categorías")),
+        );
+        return;
+      }
+    }
 
-    if (producto != null) {
+    final productoSeleccionado =
+        await showModalBottomSheet<Map<String, dynamic>>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) {
+            return CategoryProductPicker(
+              categorias: categorias,
+              productos: productos,
+            );
+          },
+        );
+
+    if (productoSeleccionado != null) {
+      // pedir cantidad (igual que antes)
       final cantidad = await showDialog<int>(
         context: context,
         builder: (context) {
           int tempCantidad = 1;
           return AlertDialog(
-            title: Text('Cantidad'),
+            title: const Text('Cantidad'),
             content: TextFormField(
               initialValue: '1',
               keyboardType: TextInputType.number,
@@ -169,7 +198,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, tempCantidad),
-                child: Text('Aceptar'),
+                child: const Text('Aceptar'),
               ),
             ],
           );
@@ -179,9 +208,9 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
       if (cantidad != null && cantidad > 0) {
         setState(() {
           productosSeleccionados.add({
-            'IdProducto': producto['IdProducto'],
-            'Nombre': producto['Nombre'],
-            'Precio': producto['Precio'],
+            'IdProducto': productoSeleccionado['IdProducto'],
+            'Nombre': productoSeleccionado['Nombre'],
+            'Precio': productoSeleccionado['Precio'],
             'Cantidad': cantidad,
           });
           _calcularTotal();
@@ -189,6 +218,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
       }
     }
   }
+  // ---------- FIN NUEVO
 
   Future<void> _guardarPedido() async {
     if (!_formKey.currentState!.validate()) return;
@@ -276,9 +306,53 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     );
 
     if (res.statusCode == 200 || res.statusCode == 201) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("✅ Pedido creado con éxito")));
+      // 🔹 Descontar stock de cada producto
+      for (final p in productosSeleccionados) {
+        final productoId = p['IdProducto'];
+        final cantidadComprada = p['Cantidad'];
+
+        try {
+          final respProd = await http.get(
+            Uri.parse(
+              "https://www.apicreartnino.somee.com/api/Productos/Obtener/$productoId",
+            ),
+          );
+          if (respProd.statusCode != 200) continue;
+
+          final producto = jsonDecode(respProd.body);
+
+          final actualizado = {
+            "IdProducto": producto["IdProducto"],
+            "CategoriaProducto": producto["CategoriaProducto"],
+            "Nombre": producto["Nombre"],
+            "Imagen": producto["Imagen"],
+            "Cantidad": (producto["Cantidad"] ?? 0) - cantidadComprada,
+            "Marca": producto["Marca"],
+            "Precio": producto["Precio"],
+            "Estado": producto["Estado"],
+          };
+
+          final respUpd = await http.put(
+            Uri.parse(
+              "https://www.apicreartnino.somee.com/api/Productos/Actualizar/$productoId",
+            ),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode(actualizado),
+          );
+
+          if (respUpd.statusCode != 200) {
+            debugPrint(
+              "❌ Error al actualizar stock de $productoId: ${respUpd.body}",
+            );
+          }
+        } catch (e) {
+          debugPrint("⚠️ Error procesando stock de producto $productoId: $e");
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ Pedido creado y stock actualizado")),
+      );
       Navigator.pop(context, true);
     } else {
       ScaffoldMessenger.of(
@@ -323,26 +397,47 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    DropdownButtonFormField<String>(
-                      decoration: pastelInputDecoration(
-                        "Cliente",
-                        Icons.person,
+                    // CLIENTE (mantengo simple para no romper lo que ya tenías)
+                    DropdownSearch<String>(
+                      popupProps: PopupProps.menu(
+                        showSearchBox: true,
+                        searchFieldProps: TextFieldProps(
+                          decoration: InputDecoration(
+                            hintText: "Buscar cliente...",
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
                       ),
-                      value: _idCliente,
-                      items: clientes.map((c) {
-                        final esNuevo = c['EsUsuarioNuevo'] == true;
-                        final id = esNuevo ? c['IdUsuario'] : c['IdCliente'];
-                        final nombre = c['NombreCompleto'] ?? "Sin nombre";
-                        return DropdownMenuItem(
-                          value: id.toString(),
-                          child: Text(esNuevo ? "(Nuevo) $nombre" : nombre),
-                        );
-                      }).toList(),
-                      onChanged: (val) => setState(() => _idCliente = val),
-                      validator: (val) =>
-                          val == null ? 'Selecciona un cliente' : null,
+                      dropdownDecoratorProps: DropDownDecoratorProps(
+                        dropdownSearchDecoration: pastelInputDecoration(
+                          "Cliente",
+                          Icons.person,
+                        ),
+                      ),
+                      items: clientes
+                          .where((c) => c['EsUsuarioNuevo'] != true)
+                          .map((c) => " ${c['NombreCompleto'] ?? 'Sin nombre'}")
+                          .toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          _idCliente = val?.split(" - ").first;
+                        });
+                      },
+                      selectedItem: _idCliente != null
+                          ? clientes.firstWhere(
+                              (c) => c['IdCliente'].toString() == _idCliente,
+                              orElse: () => {},
+                            )['NombreCompleto']
+                          : null,
+                      validator: (val) => val == null || val.isEmpty
+                          ? 'Selecciona un cliente'
+                          : null,
                     ),
                     const SizedBox(height: 12),
+
+                    // MÉTODO DE PAGO
                     DropdownButtonFormField<String>(
                       decoration: pastelInputDecoration(
                         "Método de pago",
@@ -358,6 +453,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       validator: (val) => val == null ? 'Requerido' : null,
                     ),
                     const SizedBox(height: 12),
+
+                    // FECHA
                     ListTile(
                       tileColor: const Color(0xFFFFF0F5),
                       shape: RoundedRectangleBorder(
@@ -385,6 +482,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       },
                     ),
                     const SizedBox(height: 12),
+
+                    // DESCRIPCION
                     TextFormField(
                       decoration: pastelInputDecoration(
                         "Descripción",
@@ -393,6 +492,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       onSaved: (val) => _descripcion = val ?? '',
                     ),
                     const SizedBox(height: 12),
+
+                    // SUBIR IMAGEN
                     ElevatedButton.icon(
                       style: pastelButtonStyle(),
                       onPressed: _subiendoImagen
@@ -408,7 +509,9 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                         padding: const EdgeInsets.only(top: 8),
                         child: Text("✅ Imagen subida: $_comprobantePago"),
                       ),
+
                     const SizedBox(height: 20),
+
                     const Text(
                       "🛒 Productos seleccionados",
                       style: TextStyle(
@@ -417,6 +520,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       ),
                     ),
                     const SizedBox(height: 6),
+
+                    // Lista de productos seleccionados
                     ...productosSeleccionados.map((p) {
                       int index = productosSeleccionados.indexOf(p);
                       return Card(
@@ -470,14 +575,20 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                         ),
                       );
                     }).toList(),
+
                     const SizedBox(height: 12),
+
+                    // BOTÓN AGREGAR PRODUCTO -> abre modal categoría->producto
                     ElevatedButton.icon(
                       style: pastelButtonStyle(),
                       onPressed: _seleccionarProducto,
                       icon: const Icon(Icons.add),
                       label: const Text("Agregar producto"),
                     ),
+
                     const SizedBox(height: 20),
+
+                    // TOTALES
                     Text(
                       "💰 Valor inicial: \$$_valorInicial",
                       style: const TextStyle(color: Colors.green),
@@ -491,6 +602,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 20),
+
                     ElevatedButton(
                       style: pastelButtonStyle(height: 50),
                       onPressed: _guardarPedido,
@@ -507,6 +619,202 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
   }
 }
 
+// -------------------- WIDGET MODAL (categoría -> producto) --------------------
+class CategoryProductPicker extends StatefulWidget {
+  final List<dynamic> categorias;
+  final List<dynamic> productos;
+
+  const CategoryProductPicker({
+    required this.categorias,
+    required this.productos,
+    super.key,
+  });
+
+  @override
+  State<CategoryProductPicker> createState() => _CategoryProductPickerState();
+}
+
+class _CategoryProductPickerState extends State<CategoryProductPicker> {
+  bool mostrandoProductos = false;
+  List<dynamic> listaMostrar = [];
+  int? categoriaSeleccionadaId;
+  String searchText = "";
+
+  @override
+  void initState() {
+    super.initState();
+    listaMostrar = widget.categorias;
+  }
+
+  void filtrar(String q) {
+    if (!mounted) return; // 👈 FIX
+    setState(() {
+      searchText = q;
+      if (mostrandoProductos) {
+        listaMostrar = widget.productos
+            .where(
+              (p) =>
+                  (p['CategoriaProducto'] == categoriaSeleccionadaId) &&
+                  (p['Nombre'] ?? '').toString().toLowerCase().contains(
+                    q.toLowerCase(),
+                  ),
+            )
+            .toList();
+      } else {
+        listaMostrar = widget.categorias
+            .where(
+              (c) => (c['CategoriaProducto1'] ?? '')
+                  .toString()
+                  .toLowerCase()
+                  .contains(q.toLowerCase()),
+            )
+            .toList();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final titleText = mostrandoProductos
+        ? "Selecciona producto"
+        : "Selecciona categoría";
+    final size = MediaQuery.of(context).size;
+
+    return SafeArea(
+      child: Container(
+        height: size.height * 0.72,
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  if (mostrandoProductos)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.pinkAccent,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          mostrandoProductos = false;
+                          listaMostrar = widget.categorias;
+                          categoriaSeleccionadaId = null;
+                          searchText = "";
+                        });
+                      },
+                    ),
+                  Expanded(
+                    child: TextField(
+                      onChanged: filtrar,
+                      decoration: InputDecoration(
+                        hintText: mostrandoProductos
+                            ? "Buscar producto..."
+                            : "Buscar categoría...",
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: Colors.pinkAccent,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFFFF0F5),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.redAccent),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  titleText,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: listaMostrar.isEmpty
+                    ? Center(
+                        child: Text(
+                          mostrandoProductos
+                              ? "No se encontraron productos"
+                              : "No se encontraron categorías",
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: listaMostrar.length,
+                        itemBuilder: (context, index) {
+                          final item = listaMostrar[index];
+                          return Card(
+                            color: const Color(0xFFFFF0F5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            margin: const EdgeInsets.symmetric(vertical: 6),
+                            child: ListTile(
+                              title: Text(
+                                mostrandoProductos
+                                    ? item['Nombre'] ?? 'Sin nombre'
+                                    : item['CategoriaProducto1'] ??
+                                          'Sin nombre',
+                              ),
+                              subtitle: Text(
+                                mostrandoProductos
+                                    ? "Precio: \$${item['Precio']}"
+                                    : (item['Descripcion'] ?? ""),
+                              ),
+                              onTap: () {
+                                if (mostrandoProductos) {
+                                  Navigator.pop(
+                                    context,
+                                    Map<String, dynamic>.from(item),
+                                  );
+                                } else {
+                                  // pasar a productos de esa categoría
+                                  final idCat = item['IdCategoriaProducto'];
+                                  final prods = widget.productos
+                                      .where(
+                                        (p) => p['CategoriaProducto'] == idCat,
+                                      )
+                                      .toList();
+                                  setState(() {
+                                    categoriaSeleccionadaId = idCat;
+                                    listaMostrar = prods;
+                                    mostrandoProductos = true;
+                                    searchText = "";
+                                  });
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// -------------------- DECORATORS --------------------
 InputDecoration pastelInputDecoration(String label, IconData icon) {
   return InputDecoration(
     prefixIcon: Icon(icon, color: Colors.pinkAccent),

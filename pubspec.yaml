@@ -46,6 +46,7 @@ dependencies:
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   flutter_date_pickers: ^0.4.3
+  dropdown_search: ^5.0.6
 
 dev_dependencies:
   flutter_test:

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-
 import '../models/categoria.dart';
 import 'productos_page.dart';
 import '../models/producto.dart';
@@ -53,7 +52,9 @@ class _CategoriasPageState extends State<CategoriasPage> {
     });
 
     try {
-      final url = Uri.parse('https://apicreartnino.somee.com/api/Categoria_productos/Lista');
+      final url = Uri.parse(
+        'https://apicreartnino.somee.com/api/Categoria_productos/Lista',
+      );
       final response = await http.get(url);
 
       if (response.statusCode == 200) {
@@ -100,134 +101,151 @@ class _CategoriasPageState extends State<CategoriasPage> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : isError
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'Error al cargar categorías.',
-                        style: TextStyle(fontSize: 16, color: Colors.red),
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: fetchCategorias,
-                        child: const Text('Reintentar'),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Error al cargar categorías.',
+                    style: TextStyle(fontSize: 16, color: Colors.red),
                   ),
-                )
-              : categorias.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No hay categorías disponibles.',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              children: [
-                                const Text(
-                                  'Selecciona la categoría de tu interes',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                ),
-                                const SizedBox(height: 10),
-                                TextField(
-                                  onChanged: filtrarCategorias,
-                                  decoration: InputDecoration(
-                                    prefixIcon: const Icon(Icons.search),
-                                    hintText: 'Buscar',
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: fetchCategorias,
+                    child: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            )
+          : categorias.isEmpty
+          ? const Center(
+              child: Text(
+                'No hay categorías disponibles.',
+                style: TextStyle(fontSize: 16),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Selecciona la categoría de tu interes',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          onChanged: filtrarCategorias,
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: 'Buscar',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          categoriasFiltradas.isEmpty
-                              ? const Expanded(
-                                  child: Center(
-                                    child: Text(
-                                      'No se encontraron coincidencias.',
-                                      style: TextStyle(fontSize: 16),
-                                    ),
-                                  ),
-                                )
-                              : Expanded(
-                                  child: GridView.builder(
-                                    itemCount: categoriasFiltradas.length,
-                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 2,
-                                      crossAxisSpacing: 12,
-                                      mainAxisSpacing: 12,
-                                      childAspectRatio: 0.85,
-                                    ),
-                                    itemBuilder: (context, index) {
-                                      final categoria = categoriasFiltradas[index];
-                                      final imagenUrl = imagenesCategoria[categoria.id] ?? imagenDefault;
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  categoriasFiltradas.isEmpty
+                      ? const Expanded(
+                          child: Center(
+                            child: Text(
+                              'No se encontraron coincidencias.',
+                              style: TextStyle(fontSize: 16),
+                            ),
+                          ),
+                        )
+                      : Expanded(
+                          child: GridView.builder(
+                            itemCount: categoriasFiltradas.length,
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.85,
+                                ),
+                            itemBuilder: (context, index) {
+                              final categoria = categoriasFiltradas[index];
+                              final imagenUrl =
+                                  imagenesCategoria[categoria.id] ??
+                                  imagenDefault;
 
-                                      return GestureDetector(
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => ProductosPage(
-                                                categoriaId: categoria.id,
-                                                categoriaNombre: categoria.nombre,
-                                                carrito: carritoGlobal, // ✅ Pasamos carrito compartido
-                                              ),
+                              return GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ProductosPage(
+                                        categoriaId: categoria.id,
+                                        categoriaNombre: categoria.nombre,
+                                        carrito:
+                                            carritoGlobal, // ✅ Pasamos carrito compartido
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Card(
+                                  elevation: 4,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                              top: Radius.circular(16),
                                             ),
-                                          );
-                                        },
-                                        child: Card(
-                                          elevation: 4,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(16),
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                                child: Image.network(
-                                                  imagenUrl,
-                                                  height: 100,
-                                                  width: double.infinity,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (context, error, stackTrace) => Container(
+                                        child: Image.network(
+                                          imagenUrl,
+                                          height: 100,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) =>
+                                                  Container(
                                                     height: 100,
                                                     color: Colors.grey[300],
-                                                    child: const Icon(Icons.broken_image, size: 40),
+                                                    child: const Icon(
+                                                      Icons.broken_image,
+                                                      size: 40,
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
-                                              Padding(
-                                                padding: const EdgeInsets.all(8.0),
-                                                child: Text(
-                                                  categoria.nombre,
-                                                  textAlign: TextAlign.center,
-                                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                                ),
-                                              ),
-                                            ],
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Text(
+                                          categoria.nombre,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
-                                      );
-                                    },
+                                      ),
+                                    ],
                                   ),
                                 ),
-                        ],
-                      ),
-                    ),
+                              );
+                            },
+                          ),
+                        ),
+                ],
+              ),
+            ),
     );
   }
 }
