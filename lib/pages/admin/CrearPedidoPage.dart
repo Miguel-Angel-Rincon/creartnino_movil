@@ -130,10 +130,11 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     setState(() => _subiendoImagen = false);
 
     final url = Uri.parse(
-      "https://api.cloudinary.com/v1_1/angelr10/image/upload",
+      "https://api.cloudinary.com/v1_1/creartnino/image/upload",
     );
     final uploadRequest = http.MultipartRequest("POST", url)
-      ..fields['upload_preset'] = "Creartnino"
+      ..fields['upload_preset'] = "CreartNino"
+      ..fields['folder'] = "Comprobantes"
       ..files.add(await http.MultipartFile.fromPath('file', image.path));
 
     final response = await uploadRequest.send();
@@ -236,10 +237,19 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     }
     _formKey.currentState!.save();
 
-    final clienteSeleccionado = clientes.firstWhere((c) {
-      final id = c['EsUsuarioNuevo'] ? c['IdUsuario'] : c['IdCliente'];
-      return id.toString() == _idCliente;
-    });
+    final clienteSeleccionado = clientes.firstWhere(
+      (c) {
+        final id = c['EsUsuarioNuevo'] ? c['IdUsuario'] : c['IdCliente'];
+        return id.toString() == _idCliente;
+      },
+      orElse: () => null, // 👈 AGREGA ESTO TAMBIÉN
+    );
+    if (clienteSeleccionado == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("❌ Cliente no válido")));
+      return;
+    }
 
     if (clienteSeleccionado['EsUsuarioNuevo'] == true) {
       if ((clienteSeleccionado['NumDocumento'] ?? "").isEmpty ||
@@ -398,18 +408,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                 child: Column(
                   children: [
                     // CLIENTE (mantengo simple para no romper lo que ya tenías)
-                    DropdownSearch<String>(
-                      popupProps: PopupProps.menu(
-                        showSearchBox: true,
-                        searchFieldProps: TextFieldProps(
-                          decoration: InputDecoration(
-                            hintText: "Buscar cliente...",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
+                    DropdownSearch<Map<String, dynamic>>(
+                      popupProps: PopupProps.menu(showSearchBox: true),
                       dropdownDecoratorProps: DropDownDecoratorProps(
                         dropdownSearchDecoration: pastelInputDecoration(
                           "Cliente",
@@ -418,22 +418,30 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       ),
                       items: clientes
                           .where((c) => c['EsUsuarioNuevo'] != true)
-                          .map((c) => " ${c['NombreCompleto'] ?? 'Sin nombre'}")
+                          .map(
+                            (c) => {
+                              "id": c['IdCliente'].toString(),
+                              "nombre": c['NombreCompleto'] ?? 'Sin nombre',
+                            },
+                          )
                           .toList(),
+                      itemAsString: (item) => item["nombre"],
                       onChanged: (val) {
                         setState(() {
-                          _idCliente = val?.split(" - ").first;
+                          _idCliente = val?["id"];
                         });
                       },
                       selectedItem: _idCliente != null
-                          ? clientes.firstWhere(
-                              (c) => c['IdCliente'].toString() == _idCliente,
-                              orElse: () => {},
-                            )['NombreCompleto']
+                          ? {
+                              "id": _idCliente,
+                              "nombre": clientes.firstWhere(
+                                (c) => c['IdCliente'].toString() == _idCliente,
+                                orElse: () => {"NombreCompleto": "Sin nombre"},
+                              )["NombreCompleto"],
+                            }
                           : null,
-                      validator: (val) => val == null || val.isEmpty
-                          ? 'Selecciona un cliente'
-                          : null,
+                      validator: (val) =>
+                          val == null ? 'Selecciona un cliente' : null,
                     ),
                     const SizedBox(height: 12),
 

@@ -265,9 +265,9 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
       // 4️⃣ Refrescar pedidos
       await fetchPedidosDelCliente();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Pedido anulado y stock devuelto")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("✅ Pedido anulado")));
     } catch (e) {
       debugPrint("❌ Error en anularPedido: $e");
       ScaffoldMessenger.of(context).showSnackBar(

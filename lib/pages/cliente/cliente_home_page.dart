@@ -31,24 +31,6 @@ class _ClienteHomePageConCategoriasState
   String searchText = '';
   final Map<Producto, int> carritoGlobal = {};
 
-  final String imagenDefault =
-      'https://res.cloudinary.com/ddsakxqhd/image/upload/v1751577043/topper_a4mfcj.png';
-
-  final Map<int, String> imagenesCategoria = {
-    1: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1751577043/taza_vsqehr.png',
-    2: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1751577043/tarjeta_agjvrc.png',
-    3: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1751577043/caja_e1jsel.png',
-    4: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/images_3_fonbkf.jpg',
-    5: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/images_zld9mq.jpg',
-    6: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/images_2_gesirh.jpg',
-    7: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/descarga_3_rztdgk.jpg',
-    8: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/images_1_cgbod7.jpg',
-    9: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/descarga_tvyzoh.jpg',
-    10: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/descarga_4_ugwubr.jpg',
-    11: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000648/descarga_2_zujnjo.jpg',
-    12: 'https://res.cloudinary.com/ddsakxqhd/image/upload/v1752000647/descarga_1_wu0hqs.jpg',
-  };
-
   @override
   void initState() {
     super.initState();
@@ -191,8 +173,8 @@ class _ClienteHomePageConCategoriasState
                 ),
                 itemBuilder: (context, index) {
                   final categoria = categoriasFiltradas[index];
-                  final imagenUrl =
-                      imagenesCategoria[categoria.id] ?? imagenDefault;
+                  const imagenUrl =
+                      'https://res.cloudinary.com/creartnino/image/upload/v1759268895/logorina_g3ixkd.png';
 
                   return GestureDetector(
                     onTap: () {

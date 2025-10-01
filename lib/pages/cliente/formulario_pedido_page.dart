@@ -218,10 +218,14 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
 
     setState(() => _subiendoImagen = true);
     final url = Uri.parse(
-      "https://api.cloudinary.com/v1_1/angelr10/image/upload",
+      "https://api.cloudinary.com/v1_1/creartnino/image/upload",
     );
+
     final uploadRequest = http.MultipartRequest("POST", url)
-      ..fields['upload_preset'] = "Creartnino"
+      ..fields['upload_preset'] =
+          "CreartNino" // <- correcto
+      ..fields['folder'] =
+          "Comprobantes" // <- carpeta dentro de tu cuenta
       ..files.add(await http.MultipartFile.fromPath('file', image.path));
 
     final response = await uploadRequest.send();
@@ -960,7 +964,7 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
         }
       }
 
-      mostrarSnackBar(context, "✅ Pedido creado y stock actualizado");
+      mostrarSnackBar(context, "✅ Pedido creado ");
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const ClienteHomePageConCategorias()),
