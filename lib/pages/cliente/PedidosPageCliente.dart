@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PedidosPageCliente extends StatefulWidget {
   final String numDocumentoUsuario;
@@ -13,6 +14,7 @@ class PedidosPageCliente extends StatefulWidget {
 }
 
 class _PedidosPageClienteState extends State<PedidosPageCliente> {
+  List<int> pedidosIgnorarAlerta = [];
   List<dynamic> pedidosCliente = [];
   Map<int, dynamic> estadosMap = {};
   Map<int, dynamic> productosMap = {};
@@ -48,12 +50,36 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
     }
   }
 
+  void revisarPedidosModificados() {
+    final pedidosModificados = _pedidosFiltrados
+        .where((p) {
+          final id = p['IdPedido'];
+          return fueModificado(p) && !pedidosIgnorarAlerta.contains(id);
+        })
+        .map<int>((p) => p['IdPedido'])
+        .toList();
+
+    if (pedidosModificados.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        mostrarAlertaPedidosModificados(context, pedidosModificados);
+      });
+    }
+  }
+
+  void verificarYMostrarAlerta(BuildContext context, List<int> ids) async {
+    if (await seDebeMostrarAlerta()) {
+      mostrarAlertaPedidosModificados(context, ids);
+    }
+  }
+
   Future<void> fetchPedidosDelCliente() async {
     setState(() {
       isLoading = true;
       pedidosCliente = [];
       noEsCliente = false;
     });
+
+    revisarPedidosModificados();
 
     final documentoUsuario = widget.numDocumentoUsuario.trim();
     print('🔍 Buscando pedidos para usuario: "$documentoUsuario"');
@@ -127,6 +153,14 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
           isLoading = false;
           paginaActual = 1;
         });
+        final idsModificados = filtrados
+            .where((p) => fueModificado(p))
+            .map<int>((p) => p['IdPedido'])
+            .toList();
+
+        if (idsModificados.isNotEmpty) {
+          verificarYMostrarAlerta(context, idsModificados);
+        }
       } else {
         print("❌ Error al obtener datos de la API.");
         setState(() => isLoading = false);
@@ -154,6 +188,22 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
       }
     } catch (_) {}
     return [];
+  }
+
+  bool fueModificado(dynamic pedido) {
+    final inicial = pedido['ValorInicial'] ?? 0;
+    final restante = pedido['ValorRestante'] ?? 0;
+    final total = pedido['TotalPedido'] ?? 0;
+
+    final totalOriginal = inicial + restante; // Este es el original
+
+    return total != totalOriginal; // Si es distinto, fue modificado
+  }
+
+  num calcularNuevoRestante(dynamic pedido) {
+    final inicial = pedido['ValorInicial'] ?? 0;
+    final totalActual = pedido['TotalPedido'] ?? 0;
+    return totalActual - inicial; // Nuevo restante basado en total actualizado
   }
 
   Future<void> anularPedido(int idPedido) async {
@@ -273,6 +323,8 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
 
       // 4️⃣ Refrescar pedidos
       await fetchPedidosDelCliente();
+
+      revisarPedidosModificados();
 
       ScaffoldMessenger.of(
         context,
@@ -449,6 +501,84 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
     );
   }
 
+  void mostrarAlertaPedidosModificados(BuildContext context, List<int> ids) {
+    final esUno = ids.length == 1;
+    final idsTexto = ids.join(", ");
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            esUno ? "⚠ Pedido modificado" : "⚠ Pedidos modificados",
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.orange,
+            ),
+          ),
+          content: Text(
+            esUno
+                ? "El precio del pedido #$idsTexto fue actualizado sea por precio si personalizastes o por cobro de envio."
+                : "Los precios de los pedidos #$idsTexto fueron actualizados sea por precio si personalizastes o por cobro de envio.",
+          ),
+          actions: [
+            // ❌ No volver a mostrar esos pedidos
+            TextButton(
+              child: const Text(
+                "No recordarme más",
+                style: TextStyle(color: Colors.red),
+              ),
+              onPressed: () async {
+                final prefs = await SharedPreferences.getInstance();
+                final fechaLimite =
+                    DateTime.now().millisecondsSinceEpoch +
+                    (15 * 60 * 1000); // 15 min
+                await prefs.setInt('noMostrarAlertaPedidos', fechaLimite);
+                Navigator.pop(context);
+              },
+            ),
+            // ✅ Seguir recordando en el futuro
+            TextButton(
+              child: const Text(
+                "Recordármelo",
+                style: TextStyle(color: Colors.purple),
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool> seDebeMostrarAlerta() async {
+    final prefs = await SharedPreferences.getInstance();
+    final fechaGuardada = prefs.getInt('noMostrarAlertaPedidos');
+
+    if (fechaGuardada == null) {
+      print("🟢 No hay fecha guardada → mostrar alerta");
+      return true;
+    }
+
+    final ahora = DateTime.now().millisecondsSinceEpoch;
+
+    if (ahora > fechaGuardada) {
+      print("🟢 Ya pasaron los 30 min → borrar preferencia y mostrar alerta");
+      await prefs.remove('noMostrarAlertaPedidos');
+      return true;
+    } else {
+      final restanteMs = fechaGuardada - ahora;
+      final minutosRestantes = (restanteMs / 60000).toStringAsFixed(1);
+      print(
+        "⏳ Todavía faltan $minutosRestantes min para volver a mostrar alerta",
+      );
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -544,6 +674,7 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                   itemCount: _pedidosPaginados.length,
                                   itemBuilder: (context, index) {
                                     final p = _pedidosPaginados[index];
+
                                     final estado =
                                         estadosMap[p['IdEstado']]?['NombreEstado'] ??
                                         'Desconocido';
@@ -624,9 +755,46 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                             ),
                                             const SizedBox(height: 10),
                                             const SizedBox(height: 10),
-                                            Text(
-                                              "💳 Restante: ${formatCOP(p['ValorRestante'] ?? 0)}",
-                                            ),
+                                            // ✅ Si el pedido fue modificado, mostrar solo el nuevo restante y mensaje.
+                                            // Si no fue modificado, mostrar el restante normal.
+                                            fueModificado(p)
+                                                ? Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      const SizedBox(height: 8),
+
+                                                      // 🟡 Estado de modificado
+                                                      Text(
+                                                        "🟡 Pedido Modificado",
+                                                        style: TextStyle(
+                                                          color: Colors
+                                                              .orange[800],
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+
+                                                      // 💡 Nuevo restante
+                                                      Text(
+                                                        "💡 Nuevo restante: ${formatCOP(calcularNuevoRestante(p))}",
+                                                        style: const TextStyle(
+                                                          color: Colors.red,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                                : Text(
+                                                    "💳 Restante: ${formatCOP(p['ValorRestante'] ?? 0)}",
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
                                             const SizedBox(height: 10),
                                             const SizedBox(height: 10),
                                             Text(
@@ -690,21 +858,24 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                                 height: 20,
                                                 thickness: 1,
                                               ),
+
                                               Text("📅 Fecha: $fecha"),
-                                              const SizedBox(height: 10),
-                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 8),
+
                                               Text(
                                                 "💰 Inicial: ${formatCOP(p['ValorInicial'])}",
                                               ),
-                                              const SizedBox(height: 10),
-                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 8),
+
                                               Text(
                                                 "📁 Comprobante: ${p['ComprobantePago'] ?? 'Sin comprobante'}",
                                               ),
-                                              const SizedBox(height: 10),
-                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 12),
+
                                               const Text(
-                                                "ℹ️ Nota: Los tiempos de entrega pueden variar según la producción y ubicación. Ademas ten en cuenta que si personalizas tu pedido, los tiempos de entrega pueden ser mayores y el precio puede aumentar.",
+                                                "ℹ️ Nota: Los tiempos de entrega pueden variar según la producción y ubicación. "
+                                                "Además ten en cuenta que si personalizas tu pedido, los tiempos de entrega pueden "
+                                                "ser mayores y el precio puede aumentar.",
                                                 style: TextStyle(
                                                   fontStyle: FontStyle.italic,
                                                   color: Colors.grey,
