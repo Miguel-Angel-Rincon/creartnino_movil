@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:creartnino/pages/cliente/formulario_pedido_page.dart';
 import '../models/producto.dart';
+import 'package:intl/intl.dart';
 
 class CarritoPage extends StatefulWidget {
   final Map<Producto, int> carrito;
@@ -47,9 +48,33 @@ class _CarritoPageState extends State<CarritoPage> {
     );
   }
 
+  String formatCOP(num value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: 'COP ',
+      decimalDigits: 0, // 🔹 Sin decimales
+    );
+    return formatter.format(value);
+  }
+
   void aumentarCantidad(Producto producto) {
     setState(() {
-      widget.carrito[producto] = (widget.carrito[producto] ?? 1) + 1;
+      final actual = widget.carrito[producto] ?? 1;
+
+      if (actual < producto.cantidad) {
+        widget.carrito[producto] = actual + 1;
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Solo hay ${producto.cantidad} unidades disponibles de ${producto.nombre}.',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.pinkAccent,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     });
   }
 
@@ -124,6 +149,36 @@ class _CarritoPageState extends State<CarritoPage> {
   }
 
   void confirmarPedido() {
+    // 🔹 Validar antes de continuar
+    bool hayError = false;
+    String mensajeError = '';
+
+    widget.carrito.forEach((producto, cantidad) {
+      if (cantidad <= 0) {
+        hayError = true;
+        mensajeError = 'La cantidad de ${producto.nombre} no puede ser 0.';
+      } else if (cantidad > producto.cantidad) {
+        hayError = true;
+        mensajeError =
+            'No hay suficiente stock de ${producto.nombre}. Solo quedan ${producto.cantidad}.';
+      }
+    });
+
+    if (hayError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            mensajeError,
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return; // 🔸 Evita continuar con el pedido
+    }
+
+    // ✅ Si todo está bien, procede con el pedido
     final descripcion = generarDescripcionPedido();
     Navigator.push(
       context,
@@ -186,11 +241,10 @@ class _CarritoPageState extends State<CarritoPage> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text("💵 Precio: \$${producto.precio}"),
+                              Text("💵 Precio: ${formatCOP(producto.precio)}"),
+
                               Text("🔢 Cantidad: $cantidad"),
-                              Text(
-                                "💰 Subtotal: \$${subtotal.toStringAsFixed(0)}",
-                              ),
+                              Text("💰 Subtotal: ${formatCOP(subtotal)}"),
                               if ((personalizaciones[producto] ?? '')
                                   .isNotEmpty)
                                 Padding(

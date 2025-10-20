@@ -3,6 +3,7 @@ import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 class CrearPedidoPage extends StatefulWidget {
   const CrearPedidoPage({super.key});
@@ -39,6 +40,15 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
   void initState() {
     super.initState();
     fetchData();
+  }
+
+  String formatCOP(num value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: 'COP ',
+      decimalDigits: 0, // 🔹 Sin decimales
+    );
+    return formatter.format(value);
   }
 
   Future<void> fetchData() async {
@@ -179,6 +189,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
             return CategoryProductPicker(
               categorias: categorias,
               productos: productos,
+              productosSeleccionados: productosSeleccionados, // 👈 AGREGA ESTO
             );
           },
         );
@@ -543,7 +554,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Precio: \$${p['Precio']}"),
+                              Text("Precio: ${formatCOP(p['Precio'])}"),
                               Row(
                                 children: [
                                   const Text("Cantidad: "),
@@ -567,7 +578,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                                 ],
                               ),
                               Text(
-                                "Subtotal: \$${p['Precio'] * p['Cantidad']}",
+                                "Subtotal: ${formatCOP(p['Precio'] * p['Cantidad'])}",
                               ),
                             ],
                           ),
@@ -598,17 +609,18 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
 
                     // TOTALES
                     Text(
-                      "💰 Valor inicial: \$$_valorInicial",
+                      "💰 Valor inicial: ${formatCOP(_valorInicial)}",
                       style: const TextStyle(color: Colors.green),
                     ),
                     Text(
-                      "💸 Restante: \$$_valorRestante",
+                      "💸 Restante: ${formatCOP(_valorRestante)}",
                       style: const TextStyle(color: Colors.orange),
                     ),
                     Text(
-                      "🧾 Total: \$$_totalPedido",
+                      "🧾 Total: ${formatCOP(_totalPedido)}",
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
+
                     const SizedBox(height: 20),
 
                     ElevatedButton(
@@ -631,10 +643,12 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
 class CategoryProductPicker extends StatefulWidget {
   final List<dynamic> categorias;
   final List<dynamic> productos;
+  final List<Map<String, dynamic>> productosSeleccionados; // 👈 NUEVO
 
   const CategoryProductPicker({
     required this.categorias,
     required this.productos,
+    required this.productosSeleccionados, // 👈 NUEVO
     super.key,
   });
 
@@ -679,6 +693,15 @@ class _CategoryProductPickerState extends State<CategoryProductPicker> {
             .toList();
       }
     });
+  }
+
+  String formatCOP(dynamic valor) {
+    final number = double.tryParse(valor.toString()) ?? 0;
+    return NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: '\$',
+      decimalDigits: 0,
+    ).format(number);
   }
 
   @override
@@ -784,9 +807,10 @@ class _CategoryProductPickerState extends State<CategoryProductPicker> {
                               ),
                               subtitle: Text(
                                 mostrandoProductos
-                                    ? "Precio: \$${item['Precio']}"
+                                    ? "Precio: ${formatCOP(item['Precio'])}"
                                     : (item['Descripcion'] ?? ""),
                               ),
+
                               onTap: () {
                                 if (mostrandoProductos) {
                                   Navigator.pop(
@@ -798,9 +822,16 @@ class _CategoryProductPickerState extends State<CategoryProductPicker> {
                                   final idCat = item['IdCategoriaProducto'];
                                   final prods = widget.productos
                                       .where(
-                                        (p) => p['CategoriaProducto'] == idCat,
+                                        (p) =>
+                                            p['CategoriaProducto'] == idCat &&
+                                            !widget.productosSeleccionados.any(
+                                              (sel) =>
+                                                  sel['IdProducto'] ==
+                                                  p['IdProducto'],
+                                            ), // 👈 FILTRO NUEVO
                                       )
                                       .toList();
+
                                   setState(() {
                                     categoriaSeleccionadaId = idCat;
                                     listaMostrar = prods;

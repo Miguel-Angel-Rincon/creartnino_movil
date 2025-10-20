@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../screens/carrito_page.dart';
 import '../models/producto.dart';
 import '../models/imagen.dart';
+import 'package:intl/intl.dart';
 
 class ProductosPage extends StatefulWidget {
   final int categoriaId;
@@ -34,6 +35,15 @@ class _ProductosPageState extends State<ProductosPage> {
     super.initState();
     carrito = widget.carrito;
     fetchProductosYImagenes();
+  }
+
+  String formatCOP(num value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: 'COP ',
+      decimalDigits: 0, // 🔹 Sin decimales
+    );
+    return formatter.format(value);
   }
 
   Future<void> fetchProductosYImagenes() async {
@@ -140,76 +150,160 @@ class _ProductosPageState extends State<ProductosPage> {
   }
 
   void mostrarDetalleProducto(Producto producto) {
-    final cantidad = cantidadesSeleccionadas[producto] ?? 1;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                producto.nombre,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                '\$${producto.precio.toStringAsFixed(0)} COP',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.deepPurple,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: () {
-                      disminuirCantidad(producto);
-                    },
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            // 🔹 Cantidad inicial siempre 1
+            int cantidad = cantidadesSeleccionadas[producto] ?? 1;
+            cantidadesSeleccionadas[producto] = cantidad;
+
+            // 🔹 Aumentar cantidad
+            void aumentar() {
+              if (cantidad < producto.cantidad) {
+                setModalState(() => cantidad++);
+                setState(() => cantidadesSeleccionadas[producto] = cantidad);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      "Solo hay ${producto.cantidad} disponibles",
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    backgroundColor: Colors.pinkAccent,
+                    duration: const Duration(seconds: 1),
                   ),
-                  Text('$cantidad'),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () {
-                      aumentarCantidad(producto);
-                    },
+                );
+              }
+            }
+
+            // 🔹 Disminuir cantidad
+            void disminuir() {
+              if (cantidad > 1) {
+                setModalState(() => cantidad--);
+                setState(() => cantidadesSeleccionadas[producto] = cantidad);
+              }
+            }
+
+            return Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 🏷️ Nombre
+                  Text(
+                    producto.nombre,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color.fromARGB(255, 0, 0, 0),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // 💰 Precio con formato COP
+                  Text(
+                    formatCOP(producto.precio),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      color: Colors.deepPurple,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  // 📦 Disponibles
+                  Text(
+                    'Disponibles: ${producto.cantidad}',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  // 🔢 Selector de cantidad
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.remove_circle_outline,
+                          color: Colors.pinkAccent,
+                          size: 28,
+                        ),
+                        onPressed: disminuir,
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.pink[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.pinkAccent,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          '$cantidad',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.add_circle_outline,
+                          color: Colors.pinkAccent,
+                          size: 28,
+                        ),
+                        onPressed: aumentar,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // 🛒 Botón agregar al carrito
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        agregarAlCarrito(producto);
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(
+                        Icons.add_shopping_cart,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        "Agregar al carrito",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pinkAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    agregarAlCarrito(producto);
-                    Navigator.pop(context); // cerrar modal
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.pinkAccent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text(
-                    "Agregar al carrito",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -369,13 +463,14 @@ class _ProductosPageState extends State<ProductosPage> {
                                               const SizedBox(height: 6),
                                               if (producto.cantidad > 0) ...[
                                                 Text(
-                                                  '\$${producto.precio.toStringAsFixed(0)} COP',
+                                                  '${formatCOP(producto.precio)}',
                                                   style: const TextStyle(
                                                     fontSize: 14,
                                                     color: Colors.deepPurple,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
+
                                                 const SizedBox(height: 6),
                                                 const Text(
                                                   "Dar click para agregar",

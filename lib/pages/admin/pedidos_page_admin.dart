@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:creartnino/pages/admin/CrearPedidoPage.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
 class Pedido {
   final int idPedido;
@@ -71,6 +72,7 @@ class PedidosPageAdmin extends StatefulWidget {
 
 class _PedidosPageAdminState extends State<PedidosPageAdmin> {
   List<Pedido> pedidos = [];
+  List<Pedido> pedidosFiltrados = []; // ✅ Lista para los resultados de búsqueda
   Map<int, dynamic> estadosMap = {};
   Map<int, dynamic> productosMap = {};
   bool isLoading = true;
@@ -81,6 +83,30 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
   void initState() {
     super.initState();
     fetchPedidos();
+  }
+
+  void _filtrarPedidos(String query) {
+    final texto = query.trim().toLowerCase();
+
+    if (texto.isEmpty) {
+      pedidosFiltrados = [];
+      return;
+    }
+
+    pedidosFiltrados = pedidos.where((pedido) {
+      final nombre =
+          pedido.idClienteNavigation?['NombreCompleto']
+              ?.toString()
+              .toLowerCase() ??
+          '';
+      final documento =
+          pedido.idClienteNavigation?['NumDocumento']
+              ?.toString()
+              .toLowerCase() ??
+          '';
+
+      return nombre.contains(texto) || documento.contains(texto);
+    }).toList();
   }
 
   Future<void> fetchPedidos() async {
@@ -171,14 +197,6 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
 
   int _paginaActual = 1;
   int _itemsPorPagina = 3;
-
-  List<Pedido> get _pedidosPaginados {
-    final inicio = (_paginaActual - 1) * _itemsPorPagina;
-    final fin = inicio + _itemsPorPagina;
-    return pedidos.sublist(inicio, fin > pedidos.length ? pedidos.length : fin);
-  }
-
-  int get _totalPaginas => (pedidos.length / _itemsPorPagina).ceil();
 
   void mostrarDetalleModal(BuildContext context, int idPedido) {
     showModalBottomSheet(
@@ -273,7 +291,7 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                                       color: Colors.green,
                                     ),
                                     const SizedBox(width: 8),
-                                    Text('Precio: \$${precio} COP'),
+                                    Text('Precio: ${formatCOP(precio)}'),
                                   ],
                                 ),
                                 const SizedBox(height: 6),
@@ -296,7 +314,7 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Subtotal: \$${subtotal} COP',
+                                      'Subtotal: ${formatCOP(subtotal)}',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -334,6 +352,15 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
         );
       },
     );
+  }
+
+  String formatCOP(num value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: 'COP ',
+      decimalDigits: 0, // 🔹 Sin decimales
+    );
+    return formatter.format(value);
   }
 
   Color _colorEstado(int idEstado) {
@@ -582,7 +609,25 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
+    // 🔹 Calcular lista base (según búsqueda)
+    final bool hayBusqueda = _busquedaController.text.trim().isNotEmpty;
+    final listaBase = hayBusqueda ? pedidosFiltrados : pedidos;
+
+    // 🔹 Calcular paginación real
+    final totalPaginas = (listaBase.length / _itemsPorPagina)
+        .ceil()
+        .clamp(1, double.infinity)
+        .toInt();
+    if (_paginaActual > totalPaginas) _paginaActual = 1;
+
+    final inicio = (_paginaActual - 1) * _itemsPorPagina;
+    final fin = (inicio + _itemsPorPagina > listaBase.length)
+        ? listaBase.length
+        : inicio + _itemsPorPagina;
+    final listaMostrar = listaBase.sublist(inicio, fin);
+
     return SafeArea(
       child: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -596,6 +641,8 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                 ),
+
+                // 🔍 Barra de búsqueda + botón crear
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
@@ -613,7 +660,13 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                               borderSide: BorderSide.none,
                             ),
                           ),
-                          onChanged: (_) => setState(() {}),
+                          onChanged: (value) {
+                            setState(() {
+                              _filtrarPedidos(value);
+                              _paginaActual =
+                                  1; // 🔄 Reiniciar paginación al filtrar
+                            });
+                          },
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -631,33 +684,24 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                               builder: (_) => const CrearPedidoPage(),
                             ),
                           );
-                          if (creado == true) {
-                            fetchPedidos();
-                          }
+                          if (creado == true) fetchPedidos();
                         },
                       ),
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 10),
+
+                // 🧾 Lista principal
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: _pedidosPaginados.length,
+                    itemCount: listaMostrar.length,
                     itemBuilder: (context, index) {
-                      final pedido = _pedidosPaginados[index];
-                      final cliente =
-                          pedido.idClienteNavigation?['NombreCompleto']
-                              ?.toLowerCase() ??
-                          '';
-                      if (_busquedaController.text.trim().isNotEmpty &&
-                          !cliente.contains(
-                            _busquedaController.text.trim().toLowerCase(),
-                          )) {
-                        return const SizedBox.shrink();
-                      }
-
+                      final pedido = listaMostrar[index];
                       final isExpanded = expandedCards.contains(index);
+
                       return GestureDetector(
                         onTap: () {
                           setState(() {
@@ -702,8 +746,12 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text('📅 Fecha: ${pedido.fechaPedido}'),
-                                Text('💰 Inicial: \$${pedido.valorInicial}'),
-                                Text('💵 Total: \$${pedido.totalPedido}'),
+                                Text(
+                                  '💰 Inicial: ${formatCOP(pedido.valorInicial)}',
+                                ),
+                                Text(
+                                  '💵 Total: ${formatCOP(pedido.totalPedido)}',
+                                ),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
@@ -764,7 +812,7 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                                   Text('📦 Entrega: ${pedido.fechaEntrega}'),
                                   Text('📝 Descripción: ${pedido.descripcion}'),
                                   Text(
-                                    '💳 Restante: \$${pedido.valorRestante}',
+                                    '💳 Restante: ${formatCOP(pedido.valorRestante)}',
                                   ),
                                   Text(
                                     '📁 Comprobante: ${pedido.comprobantePago}',
@@ -778,7 +826,9 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                     },
                   ),
                 ),
-                if (pedidos.isNotEmpty)
+
+                // 🔸 Paginación visible tanto con o sin búsqueda
+                if (listaBase.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: Center(
@@ -801,7 +851,6 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Botón anterior
                             CircleAvatar(
                               backgroundColor: _paginaActual > 1
                                   ? Colors.blueAccent
@@ -817,10 +866,8 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                               ),
                             ),
                             const SizedBox(width: 16),
-
-                            // Texto de página
                             Text(
-                              "Página $_paginaActual de $_totalPaginas",
+                              "Página $_paginaActual de $totalPaginas",
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -828,10 +875,8 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                               ),
                             ),
                             const SizedBox(width: 16),
-
-                            // Botón siguiente
                             CircleAvatar(
-                              backgroundColor: _paginaActual < _totalPaginas
+                              backgroundColor: _paginaActual < totalPaginas
                                   ? const Color.fromARGB(255, 243, 160, 242)
                                   : Colors.grey[300],
                               child: IconButton(
@@ -839,7 +884,7 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
                                   Icons.arrow_forward,
                                   color: Colors.white,
                                 ),
-                                onPressed: _paginaActual < _totalPaginas
+                                onPressed: _paginaActual < totalPaginas
                                     ? () => setState(() => _paginaActual++)
                                     : null,
                               ),

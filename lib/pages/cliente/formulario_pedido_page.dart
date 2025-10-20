@@ -9,6 +9,7 @@ import '../cliente/cliente_home_page.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_date_pickers/flutter_date_pickers.dart' as dp;
+import 'package:intl/intl.dart';
 
 class FormularioPedidoPage extends StatefulWidget {
   final String descripcionGenerada;
@@ -31,17 +32,12 @@ class FormularioPedidoPage extends StatefulWidget {
 class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
   final _formKey = GlobalKey<FormState>();
   DateTime? _fechaEntrega;
-  String _metodoPago = 'Efectivo';
+  String _metodoPago = 'Transferencia';
   String _comprobantePago = '';
   bool _subiendoImagen = false;
   bool isSaving = false;
 
-  final List<String> metodos = [
-    'Efectivo',
-    'Transferencia',
-    'Nequi',
-    'Daviplata',
-  ];
+  final List<String> metodos = ['Transferencia', 'Nequi', 'Daviplata'];
   Map<String, dynamic> _cliente = {};
   late TextEditingController _clienteController;
 
@@ -56,6 +52,15 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
   void dispose() {
     _clienteController.dispose();
     super.dispose();
+  }
+
+  String formatCOP(num value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: 'COP ',
+      decimalDigits: 0, // 🔹 Sin decimales
+    );
+    return formatter.format(value);
   }
 
   Future<void> _completarDatosCliente() async {
@@ -171,7 +176,8 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
               const MetodoPagoItem(
                 icono: "💵",
                 metodo: "Efectivo",
-                descripcion: "Pagas cuando recibas el producto.",
+                descripcion:
+                    "Puedes pagar el restante cuando llegue tu producto.",
               ),
               const MetodoPagoItem(
                 icono: "🏦",
@@ -283,7 +289,51 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
                     longitud: -75.5812,
                   );
 
-                  _guardarPedido();
+                  // ✅ Usamos rootNavigator para evitar contexto inválido
+                  final confirmar = await showDialog<bool>(
+                    context: Navigator.of(context, rootNavigator: true).context,
+                    builder: (context2) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      backgroundColor: const Color(0xFFFFF5F7),
+                      title: const Text(
+                        "Confirmar envío del pedido",
+                        style: TextStyle(
+                          color: Colors.pinkAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      content: const Text(
+                        "Si personalizaste algún producto o por valor del envío, "
+                        "el administrador puede enviarte una notificación con un valor adicional. "
+                        "El costo del pedido puede aumentar.",
+                        style: TextStyle(color: Colors.black87),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context2, false),
+                          child: const Text(
+                            "Cancelar",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.send),
+                          label: const Text("Sí, enviar pedido"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.pinkAccent,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.pop(context2, true),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirmar == true) {
+                    _guardarPedido();
+                  }
                 },
               ),
 
@@ -415,10 +465,54 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
       ),
     );
 
-    if (!mounted) return; // ⚠️ Repetido por seguridad
+    if (!mounted) return;
 
     if (confirmar == "si") {
-      _guardarPedido();
+      // ✅ Alerta adicional antes de enviar el pedido
+      final confirmarEnvio = await showDialog<bool>(
+        context: Navigator.of(context, rootNavigator: true).context,
+        builder: (context2) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          backgroundColor: const Color(0xFFFFF5F7),
+          title: const Text(
+            "Confirmar envío del pedido",
+            style: TextStyle(
+              color: Colors.pinkAccent,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: const Text(
+            "Si personalizaste algún producto o por valor del envío, "
+            "el administrador puede enviarte una notificación con un valor adicional. "
+            "El costo del pedido puede aumentar. mantentente atent@ a tus pedidos",
+            style: TextStyle(color: Colors.black87),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context2, false),
+              child: const Text(
+                "Cancelar",
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.send),
+              label: const Text("Sí, enviar pedido"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.pinkAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context2, true),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmarEnvio == true) {
+        _guardarPedido();
+      }
     } else {
       // Esperar al siguiente frame para evitar context muerto
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -877,16 +971,28 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
 
     setState(() => isSaving = true);
 
-    final descripcionFinal = widget.carrito.entries
-        .map((entry) {
-          final tipo = widget.personalizaciones[entry.key]?.isNotEmpty == true
-              ? 'Personalizado'
-              : 'Prediseñado';
-          final texto = "${entry.value} x ${entry.key.nombre} ($tipo)";
-          final pers = widget.personalizaciones[entry.key];
-          return pers != null && pers.isNotEmpty ? "$texto - $pers" : texto;
-        })
-        .join(", ");
+    final descripcionFinal = (() {
+      final listaProductos = widget.carrito.entries
+          .map((entry) {
+            final producto = entry.key;
+            final cantidad = entry.value;
+            final personalizacion = widget.personalizaciones[producto];
+
+            final tipo = (personalizacion != null && personalizacion.isNotEmpty)
+                ? "Personalizado"
+                : "Prediseñado";
+
+            final detalle =
+                (personalizacion != null && personalizacion.trim().isNotEmpty)
+                ? '"$personalizacion"'
+                : "Sin personalización";
+
+            return "$cantidad x ${producto.nombre} ($tipo) - $detalle";
+          })
+          .join(", ");
+
+      return "$listaProductos\n\nEste pedido fue realizado desde la app móvil.";
+    })();
 
     final pedido = {
       "IdCliente": _cliente["IdCliente"],
@@ -1148,8 +1254,9 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text("Cantidad: $cantidad"),
-                        Text("Precio: \$${precio.toStringAsFixed(0)}"),
-                        Text("Subtotal: \$${subtotal.toStringAsFixed(0)}"),
+                        Text("💵 Precio: ${formatCOP(precio)}"),
+                        Text("💰 Subtotal: ${formatCOP(subtotal)}"),
+
                         if (personalizacion.isNotEmpty)
                           Text("🎨 Personalización: $personalizacion"),
                       ],
@@ -1194,7 +1301,9 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
               const SizedBox(height: 6),
               TextFormField(
                 readOnly: true,
-                initialValue: "\$${(widget.totalGenerado * 0.5).round()}",
+                initialValue: formatCOP(
+                  (widget.totalGenerado * 0.5).roundToDouble(),
+                ),
                 decoration: pastelInputDecoration(
                   "Valor Inicial (50%)",
                   Icons.attach_money,
@@ -1203,7 +1312,9 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
               const SizedBox(height: 8),
               TextFormField(
                 readOnly: true,
-                initialValue: "\$${(widget.totalGenerado * 0.5).round()}",
+                initialValue: formatCOP(
+                  (widget.totalGenerado * 0.5).roundToDouble(),
+                ),
                 decoration: pastelInputDecoration(
                   "Valor Restante (50%)",
                   Icons.money_off,
@@ -1212,12 +1323,13 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
               const SizedBox(height: 8),
               TextFormField(
                 readOnly: true,
-                initialValue: "\$${widget.totalGenerado.round()}",
+                initialValue: formatCOP(widget.totalGenerado.roundToDouble()),
                 decoration: pastelInputDecoration(
                   "Total del Pedido",
                   Icons.monetization_on,
                 ),
               ),
+
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: isSaving ? null : _confirmarMetodoEntrega,

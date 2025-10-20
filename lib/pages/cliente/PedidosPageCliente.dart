@@ -31,6 +31,15 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
     fetchPedidosDelCliente();
   }
 
+  String formatCOP(num value) {
+    final formatter = NumberFormat.currency(
+      locale: 'es_CO',
+      symbol: 'COP ',
+      decimalDigits: 0, // 🔹 Sin decimales
+    );
+    return formatter.format(value);
+  }
+
   @override
   void didUpdateWidget(covariant PedidosPageCliente oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -339,41 +348,98 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                 return const Center(child: Text("No hay detalles del pedido."));
               }
 
+              // 🔹 Buscar el pedido actual para mostrar la descripción
+              final pedido = pedidosCliente.firstWhere(
+                (p) => p['IdPedido'] == idPedido,
+                orElse: () => {},
+              );
+              final descripcionLimpia =
+                  (pedido['Descripcion'] ?? "Sin descripción")
+                      .toString()
+                      .replaceAll('"', '')
+                      .replaceAll("Este pedido fue realizado desde la web.", "")
+                      .trim();
+
+              // 🔹 Separar la descripción en líneas (por comas)
+              final lineasDescripcion = descripcionLimpia
+                  .split(',')
+                  .map((linea) => linea.trim())
+                  .where((linea) => linea.isNotEmpty)
+                  .toList();
+
               return SizedBox(
                 height: MediaQuery.of(context).size.height * 0.6,
-                child: ListView.builder(
-                  itemCount: detalles.length,
-                  itemBuilder: (context, index) {
-                    final d = detalles[index];
-                    final producto = productosMap[d['IdProducto']] ?? {};
-                    final nombre = producto['Nombre'] ?? 'Producto';
-                    final cantidad = d['Cantidad'];
-                    final precio = producto['Precio'] ?? 0;
-                    final subtotal = cantidad * precio;
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: ListTile(
-                        leading: const Icon(
-                          Icons.inventory,
-                          size: 30,
+                child: ListView(
+                  children: [
+                    const Center(
+                      child: Text(
+                        "🧾 Detalles del Pedido",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                           color: Colors.purple,
                         ),
-                        title: Text(
-                          nombre,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text("Cantidad: $cantidad"),
-                        trailing: Text(
-                          "\$$subtotal",
-                          style: const TextStyle(fontSize: 15),
-                        ),
                       ),
-                    );
-                  },
+                    ),
+                    const SizedBox(height: 14),
+
+                    // 🔹 Lista de productos
+                    ...detalles.map((d) {
+                      final producto = productosMap[d['IdProducto']] ?? {};
+                      final nombre = producto['Nombre'] ?? 'Producto';
+                      final cantidad = d['Cantidad'];
+                      final precio = producto['Precio'] ?? 0;
+                      final subtotal = cantidad * precio;
+
+                      return Card(
+                        color: Colors.white,
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.inventory,
+                            size: 30,
+                            color: Colors.purple,
+                          ),
+                          title: Text(
+                            nombre,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            "Cantidad: $cantidad • Precio: ${formatCOP(precio)}",
+                          ),
+                          trailing: Text(
+                            formatCOP(subtotal),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+
+                    const Divider(thickness: 1, height: 30),
+
+                    // 🔹 Descripción al final (una línea por producto)
+                    const Text(
+                      "📝 Descripción:",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    ...lineasDescripcion.map(
+                      (linea) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text("• $linea"),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -487,6 +553,9 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                               DateTime.now(),
                                         );
 
+                                    // 🔹 Control de expansión
+                                    bool isExpanded = p['expanded'] == true;
+
                                     return Padding(
                                       padding: const EdgeInsets.only(
                                         bottom: 14,
@@ -514,31 +583,54 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Text(
-                                                  "Pedido #${p['IdPedido']}",
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16,
+                                            GestureDetector(
+                                              onTap: () {
+                                                setState(() {
+                                                  p['expanded'] = !isExpanded;
+                                                });
+                                              },
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Text(
+                                                    "Pedido #${p['IdPedido']}",
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 16,
+                                                    ),
                                                   ),
-                                                ),
-                                                const Icon(
-                                                  Icons.expand_more,
-                                                  color: Colors.grey,
-                                                ),
-                                              ],
+                                                  Icon(
+                                                    isExpanded
+                                                        ? Icons.expand_less
+                                                        : Icons.expand_more,
+                                                    color: Colors.grey,
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                             const SizedBox(height: 8),
-                                            Text("📅 Fecha: $fecha"),
+                                            // Mostrar solo la fecha (sin tiempo)
                                             Text(
-                                              "💰 Inicial: \$${p['ValorInicial']}",
+                                              "📦 Entrega: ${(() {
+                                                final raw = p['FechaEntrega']?.toString();
+                                                if (raw == null || raw.isEmpty) return 'No definida';
+                                                final dt = DateTime.tryParse(raw);
+                                                if (dt != null) return DateFormat('yyyy-MM-dd').format(dt);
+                                                return raw.split(' ').first;
+                                              })()}",
                                             ),
+                                            const SizedBox(height: 10),
+                                            const SizedBox(height: 10),
                                             Text(
-                                              "💵 Total: \$${p['TotalPedido']}",
+                                              "💳 Restante: ${formatCOP(p['ValorRestante'] ?? 0)}",
+                                            ),
+                                            const SizedBox(height: 10),
+                                            const SizedBox(height: 10),
+                                            Text(
+                                              "💵 Total: ${formatCOP(p['TotalPedido'])}",
                                             ),
                                             const SizedBox(height: 10),
                                             Row(
@@ -591,6 +683,34 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                                   ),
                                               ],
                                             ),
+
+                                            // 🔹 Contenido expandido
+                                            if (isExpanded) ...[
+                                              const Divider(
+                                                height: 20,
+                                                thickness: 1,
+                                              ),
+                                              Text("📅 Fecha: $fecha"),
+                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                "💰 Inicial: ${formatCOP(p['ValorInicial'])}",
+                                              ),
+                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 10),
+                                              Text(
+                                                "📁 Comprobante: ${p['ComprobantePago'] ?? 'Sin comprobante'}",
+                                              ),
+                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 10),
+                                              const Text(
+                                                "ℹ️ Nota: Los tiempos de entrega pueden variar según la producción y ubicación. Ademas ten en cuenta que si personalizas tu pedido, los tiempos de entrega pueden ser mayores y el precio puede aumentar.",
+                                                style: TextStyle(
+                                                  fontStyle: FontStyle.italic,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),
@@ -598,6 +718,8 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
                                   },
                                 ),
                               ),
+
+                              // 🔹 Paginación
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [

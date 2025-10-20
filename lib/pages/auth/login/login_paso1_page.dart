@@ -78,10 +78,34 @@ class _LoginPaso1PageState extends State<LoginPaso1Page> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Image.network(
-                          'https://cdn-icons-png.flaticon.com/512/9460/9460929.png',
-                          height: 120,
+                        // 🌸 Imagen del logo redondeada y más grande
+                        Container(
+                          height: 180,
+                          width: 180,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.pinkAccent.shade100,
+                              width: 4,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.pinkAccent.withOpacity(0.2),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(90),
+                            child: Image.asset(
+                              'assets/logos/logo.jpg',
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                         ),
+                        const SizedBox(height: 20),
+
                         const SizedBox(height: 20),
                         const Text(
                           "Bienvenid@s CreartNino",
