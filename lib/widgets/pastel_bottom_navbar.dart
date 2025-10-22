@@ -18,15 +18,15 @@ class PastelBottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<_NavItem> navItems = esAdmin
         ? [
-            _NavItem(Icons.home, 'Inicio'),
-            _NavItem(Icons.shopping_bag_outlined, 'Pedidos'),
-            _NavItem(Icons.person_outline, 'Perfil'),
+            _NavItem(Icons.home, ''),
+            _NavItem(Icons.shopping_bag_outlined, ''),
+            _NavItem(Icons.person_outline, ''),
             _NavItem(Icons.logout, 'Salir'),
           ]
         : [
-            _NavItem(Icons.home, 'Categorias'),
-            _NavItem(Icons.receipt_long_outlined, 'Mis Pedidos'),
-            _NavItem(Icons.person_outline, 'Perfil'),
+            _NavItem(Icons.home, ''),
+            _NavItem(Icons.receipt_long_outlined, ''),
+            _NavItem(Icons.person_outline, ''),
             _NavItem(Icons.logout, 'Salir'),
           ];
 

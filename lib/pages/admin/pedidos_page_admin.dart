@@ -504,7 +504,10 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            child: const Text("Sí, anular"),
+            child: const Text(
+              "Sí, anular",
+              style: TextStyle(color: Colors.white),
+            ),
             onPressed: () => Navigator.of(context).pop(true),
           ),
         ],
