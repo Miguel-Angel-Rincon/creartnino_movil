@@ -45,12 +45,16 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
   void initState() {
     super.initState();
     _clienteController = TextEditingController();
+    _valorInicial = widget.totalGenerado * 0.5;
+    _valorInicialTexto = formatCOP(_valorInicial);
+    _valorInicialController = TextEditingController(text: _valorInicialTexto);
     _completarDatosCliente();
   }
 
   @override
   void dispose() {
     _clienteController.dispose();
+    _valorInicialController?.dispose();
     super.dispose();
   }
 
@@ -216,6 +220,10 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
       ),
     );
   }
+
+  double _valorInicial = 0;
+  String _valorInicialTexto = '';
+  TextEditingController? _valorInicialController;
 
   Future<void> _subirImagenACloudinary() async {
     final picker = ImagePicker();
@@ -1000,11 +1008,13 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
       "FechaPedido": DateTime.now().toIso8601String().split("T").first,
       "FechaEntrega": _fechaEntrega!.toIso8601String().split("T").first,
       "Descripcion": descripcionFinal,
-      "ValorInicial": (widget.totalGenerado * 0.5).round(),
-      "ValorRestante": (widget.totalGenerado * 0.5).round(),
+      "ValorInicial": _valorInicial.round(),
+      "ValorRestante": (widget.totalGenerado - _valorInicial).round(),
       "TotalPedido": widget.totalGenerado.round(),
       "ComprobantePago": _comprobantePago,
-      "IdEstado": 1,
+      "IdEstado": _valorInicial >= widget.totalGenerado
+          ? 1007
+          : 1, // 1007 si paga todo, 1 si paga inicial
       "DetallePedidos": widget.carrito.entries.map((e) {
         return {
           "IdProducto": e.key.id,
@@ -1220,6 +1230,102 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
                 },
               ),
               const SizedBox(height: 12),
+              const SizedBox(height: 12),
+
+              // Campo Valor Inicial (ANTES del comprobante
+              TextFormField(
+                controller: _valorInicialController,
+                keyboardType: TextInputType.number,
+                decoration: pastelInputDecoration(
+                  "Valor Inicial (mínimo: ${formatCOP(widget.totalGenerado * 0.5)})",
+                  Icons.attach_money,
+                ),
+                onChanged: (valor) {
+                  // Remover todo excepto números
+                  final soloNumeros = valor.replaceAll(RegExp(r'[^\d]'), '');
+
+                  if (soloNumeros.isEmpty) {
+                    _valorInicial = 0;
+                    return;
+                  }
+
+                  // Limitar a 8 cifras
+                  final numerosLimitados = soloNumeros.length > 8
+                      ? soloNumeros.substring(0, 8)
+                      : soloNumeros;
+
+                  final numero = double.tryParse(numerosLimitados) ?? 0;
+                  _valorInicial = numero;
+
+                  // Formatear con separadores de miles SIN "COP"
+                  final formatter = NumberFormat('#,###', 'es_CO');
+                  final textoFormateado = formatter.format(numero);
+
+                  // Actualizar el texto
+                  _valorInicialController?.value = TextEditingValue(
+                    text: textoFormateado,
+                    selection: TextSelection.collapsed(
+                      offset: textoFormateado.length,
+                    ),
+                  );
+                },
+                onEditingComplete: () {
+                  final minimo = widget.totalGenerado * 0.5;
+
+                  if (_valorInicial == 0) {
+                    mostrarAlerta(
+                      context: context,
+                      titulo: '⚠️',
+                      mensaje:
+                          'Debes ingresar el pago inicial (mínimo ${formatCOP(minimo)})',
+                    );
+                    setState(() {
+                      _valorInicial = minimo;
+                      final formatter = NumberFormat('#,###', 'es_CO');
+                      _valorInicialTexto = formatter.format(minimo);
+                      _valorInicialController?.text = _valorInicialTexto;
+                    });
+                  } else if (_valorInicial < minimo) {
+                    mostrarAlerta(
+                      context: context,
+                      titulo: '⚠️',
+                      mensaje:
+                          'El pago inicial mínimo es ${formatCOP(minimo)} (50% del total)',
+                    );
+                    setState(() {
+                      _valorInicial = minimo;
+                      final formatter = NumberFormat('#,###', 'es_CO');
+                      _valorInicialTexto = formatter.format(minimo);
+                      _valorInicialController?.text = _valorInicialTexto;
+                    });
+                  } else if (_valorInicial > widget.totalGenerado) {
+                    mostrarAlerta(
+                      context: context,
+                      titulo: '⚠️',
+                      mensaje:
+                          'El pago inicial no puede superar el total (${formatCOP(widget.totalGenerado)})',
+                    );
+                    setState(() {
+                      _valorInicial = widget.totalGenerado;
+                      final formatter = NumberFormat('#,###', 'es_CO');
+                      _valorInicialTexto = formatter.format(
+                        widget.totalGenerado,
+                      );
+                      _valorInicialController?.text = _valorInicialTexto;
+                    });
+                  } else {
+                    // Si el valor es válido, solo formatearlo
+                    setState(() {
+                      final formatter = NumberFormat('#,###', 'es_CO');
+                      _valorInicialTexto = formatter.format(_valorInicial);
+                      _valorInicialController?.text = _valorInicialTexto;
+                    });
+                  }
+
+                  FocusScope.of(context).unfocus();
+                },
+              ),
+              const SizedBox(height: 12),
               ElevatedButton.icon(
                 onPressed: _subiendoImagen ? null : _subirImagenACloudinary,
                 icon: const Icon(Icons.cloud_upload),
@@ -1294,36 +1400,28 @@ class _FormularioPedidoPageState extends State<FormularioPedidoPage> {
                 ),
               ),
               const SizedBox(height: 12),
+              const SizedBox(height: 12),
               Text(
                 "💰 Valores del Pedido",
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 6),
-              TextFormField(
-                readOnly: true,
-                initialValue: formatCOP(
-                  (widget.totalGenerado * 0.5).roundToDouble(),
-                ),
-                decoration: pastelInputDecoration(
-                  "Valor Inicial (50%)",
-                  Icons.attach_money,
-                ),
-              ),
+
               const SizedBox(height: 8),
               TextFormField(
                 readOnly: true,
-                initialValue: formatCOP(
-                  (widget.totalGenerado * 0.5).roundToDouble(),
+                controller: TextEditingController(
+                  text: formatCOP(widget.totalGenerado - _valorInicial),
                 ),
                 decoration: pastelInputDecoration(
-                  "Valor Restante (50%)",
+                  "Valor Restante",
                   Icons.money_off,
                 ),
               ),
+
               const SizedBox(height: 8),
               TextFormField(
                 readOnly: true,
-                initialValue: formatCOP(widget.totalGenerado.roundToDouble()),
+                initialValue: formatCOP(widget.totalGenerado),
                 decoration: pastelInputDecoration(
                   "Total del Pedido",
                   Icons.monetization_on,

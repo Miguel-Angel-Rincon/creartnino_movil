@@ -372,6 +372,10 @@ class _PedidosPageAdminState extends State<PedidosPageAdmin> {
     if (nombre.contains('proceso de entrega')) return Colors.cyan;
     if (nombre.contains('entregado')) return Colors.green;
     if (nombre.contains('anulado')) return Colors.redAccent;
+    if (nombre.contains('pedido pagado'))
+      return const Color.fromARGB(255, 40, 90, 176);
+    if (nombre.contains('venta directa'))
+      return const Color.fromARGB(255, 124, 43, 158);
     return Colors.grey;
   }
 

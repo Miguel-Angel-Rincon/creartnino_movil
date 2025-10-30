@@ -18,15 +18,17 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
   String? _metodoPago;
   DateTime? _fechaEntrega;
   String _descripcion = '';
-  int _valorInicial = 0;
+  double _valorInicial = 0; // ✅ CAMBIO 1: int -> double
   int _valorRestante = 0;
   int _totalPedido = 0;
   String _comprobantePago = '';
   bool _subiendoImagen = false;
+  TextEditingController? _valorInicialController;
+  String _valorInicialTexto = '';
 
   List<dynamic> clientes = [];
   List<dynamic> productos = [];
-  List<dynamic> categorias = []; // <-- NUEVO: categorias
+  List<dynamic> categorias = [];
   List<Map<String, dynamic>> productosSeleccionados = [];
 
   final List<String> metodosPago = [
@@ -39,14 +41,22 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
   @override
   void initState() {
     super.initState();
+    _valorInicialController =
+        TextEditingController(); // ✅ CAMBIO 2: sin formatCOP(0)
     fetchData();
+  }
+
+  @override
+  void dispose() {
+    _valorInicialController?.dispose();
+    super.dispose();
   }
 
   String formatCOP(num value) {
     final formatter = NumberFormat.currency(
       locale: 'es_CO',
       symbol: 'COP ',
-      decimalDigits: 0, // 🔹 Sin decimales
+      decimalDigits: 0,
     );
     return formatter.format(value);
   }
@@ -103,7 +113,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
           )
           .toList();
 
-      if (!mounted) return; // 👈 FIX
+      if (!mounted) return;
       setState(() {
         clientes = [
           ...listaClientes.map((c) => {...c, "EsUsuarioNuevo": false}),
@@ -117,6 +127,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     }
   }
 
+  // ✅ CAMBIO 3: Actualizar _calcularTotal con formato sin "COP"
   void _calcularTotal() {
     int subtotal = 0;
     for (var item in productosSeleccionados) {
@@ -126,8 +137,21 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     }
     setState(() {
       _totalPedido = subtotal;
-      _valorInicial = (subtotal * 0.5).round();
-      _valorRestante = subtotal - _valorInicial;
+
+      // ✅ Si no hay productos, resetear todo
+      if (subtotal == 0) {
+        _valorInicial = 0;
+        _valorRestante = 0;
+        _valorInicialTexto = '';
+        _valorInicialController?.text = '';
+      } else {
+        _valorInicial = (subtotal * 0.5);
+        _valorRestante = subtotal - _valorInicial.round();
+
+        final formatter = NumberFormat('#,###', 'es_CO');
+        _valorInicialTexto = formatter.format(_valorInicial);
+        _valorInicialController?.text = _valorInicialTexto;
+      }
     });
   }
 
@@ -137,7 +161,7 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     if (image == null) return;
 
     if (!mounted) return;
-    setState(() => _subiendoImagen = false);
+    setState(() => _subiendoImagen = true);
 
     final url = Uri.parse(
       "https://api.cloudinary.com/v1_1/creartnino/image/upload",
@@ -167,10 +191,8 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     setState(() => _subiendoImagen = false);
   }
 
-  // ---------- NUEVO: seleccionar por categoría -> luego producto (modal)
   Future<void> _seleccionarProducto() async {
     if (categorias.isEmpty) {
-      // si por alguna razón no cargaron, intentar recargar
       await fetchData();
       if (categorias.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -189,13 +211,12 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
             return CategoryProductPicker(
               categorias: categorias,
               productos: productos,
-              productosSeleccionados: productosSeleccionados, // 👈 AGREGA ESTO
+              productosSeleccionados: productosSeleccionados,
             );
           },
         );
 
     if (productoSeleccionado != null) {
-      // pedir cantidad (igual que antes)
       final cantidad = await showDialog<int>(
         context: context,
         builder: (context) {
@@ -230,7 +251,6 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
       }
     }
   }
-  // ---------- FIN NUEVO
 
   Future<void> _guardarPedido() async {
     if (!_formKey.currentState!.validate()) return;
@@ -240,21 +260,56 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
       ).showSnackBar(SnackBar(content: Text("⚠️ Agrega al menos un producto")));
       return;
     }
-    if (_fechaEntrega == null || _fechaEntrega!.isBefore(DateTime.now())) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("⚠️ Selecciona una fecha válida")));
+    // ✅ Validar fecha de entrega
+    if (_fechaEntrega == null) {
+      mostrarAlerta(
+        context: context,
+        titulo: '⚠️',
+        mensaje: 'Selecciona una fecha de entrega',
+      );
+      return;
+    }
+
+    // ✅ Validar días mínimos según descripción
+    final ahora = DateTime.now();
+    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
+    final entrega = DateTime(
+      _fechaEntrega!.year,
+      _fechaEntrega!.month,
+      _fechaEntrega!.day,
+    );
+    final diferenciaDias = entrega.difference(hoy).inDays;
+
+    // Determinar días mínimos según descripción
+    final tieneDescripcion = _descripcion.trim().isNotEmpty;
+    final diasMinimos = tieneDescripcion ? 5 : 3;
+    final tipoProducto = tieneDescripcion ? "personalizado" : "prediseñado";
+
+    if (diferenciaDias < diasMinimos) {
+      mostrarAlerta(
+        context: context,
+        titulo: '⚠️ Fecha muy cercana',
+        mensaje:
+            'Para productos ${tipoProducto}s se requieren mínimo $diasMinimos días. '
+            'La fecha seleccionada solo tiene $diferenciaDias día(s) de diferencia.',
+      );
+      return;
+    }
+    // ✅ Validar comprobante solo si el método NO es Efectivo
+    if (_metodoPago != 'Efectivo' && _comprobantePago.isEmpty) {
+      mostrarAlerta(
+        context: context,
+        titulo: '⚠️',
+        mensaje: 'Debes subir el comprobante de pago para $_metodoPago',
+      );
       return;
     }
     _formKey.currentState!.save();
 
-    final clienteSeleccionado = clientes.firstWhere(
-      (c) {
-        final id = c['EsUsuarioNuevo'] ? c['IdUsuario'] : c['IdCliente'];
-        return id.toString() == _idCliente;
-      },
-      orElse: () => null, // 👈 AGREGA ESTO TAMBIÉN
-    );
+    final clienteSeleccionado = clientes.firstWhere((c) {
+      final id = c['EsUsuarioNuevo'] ? c['IdUsuario'] : c['IdCliente'];
+      return id.toString() == _idCliente;
+    }, orElse: () => null);
     if (clienteSeleccionado == null) {
       ScaffoldMessenger.of(
         context,
@@ -304,11 +359,11 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
       "FechaPedido": DateTime.now().toIso8601String().split('T').first,
       "FechaEntrega": _fechaEntrega!.toIso8601String().split('T').first,
       "Descripcion": _descripcion,
-      "ValorInicial": _valorInicial,
+      "ValorInicial": _valorInicial.round(), // ✅ Convertir a int para enviar
       "ValorRestante": _valorRestante,
       "TotalPedido": _totalPedido,
       "ComprobantePago": _comprobantePago,
-      "IdEstado": 1,
+      "IdEstado": _valorInicial >= _totalPedido ? 1007 : 1,
       "DetallePedidos": productosSeleccionados
           .map(
             (p) => {
@@ -327,7 +382,6 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     );
 
     if (res.statusCode == 200 || res.statusCode == 201) {
-      // 🔹 Descontar stock de cada producto
       for (final p in productosSeleccionados) {
         final productoId = p['IdProducto'];
         final cantidadComprada = p['Cantidad'];
@@ -382,6 +436,41 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
     }
   }
 
+  void mostrarAlerta({
+    required BuildContext context,
+    required String titulo,
+    required String mensaje,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: const Color(0xFFFFF5F7),
+        title: Text(
+          titulo,
+          style: const TextStyle(
+            color: Colors.pinkAccent,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(mensaje, style: const TextStyle(color: Colors.black87)),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.pinkAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Aceptar"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -418,7 +507,6 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                 key: _formKey,
                 child: Column(
                   children: [
-                    // CLIENTE (mantengo simple para no romper lo que ya tenías)
                     DropdownSearch<Map<String, dynamic>>(
                       popupProps: PopupProps.menu(showSearchBox: true),
                       dropdownDecoratorProps: DropDownDecoratorProps(
@@ -456,7 +544,6 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    // MÉTODO DE PAGO
                     DropdownButtonFormField<String>(
                       decoration: pastelInputDecoration(
                         "Método de pago",
@@ -468,12 +555,19 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                             (m) => DropdownMenuItem(value: m, child: Text(m)),
                           )
                           .toList(),
-                      onChanged: (val) => setState(() => _metodoPago = val),
+                      onChanged: (val) {
+                        setState(() {
+                          _metodoPago = val;
+                          // ✅ Limpiar comprobante si cambia a Efectivo
+                          if (val == 'Efectivo') {
+                            _comprobantePago = '';
+                          }
+                        });
+                      },
                       validator: (val) => val == null ? 'Requerido' : null,
                     ),
                     const SizedBox(height: 12),
 
-                    // FECHA
                     ListTile(
                       tileColor: const Color(0xFFFFF0F5),
                       shape: RoundedRectangleBorder(
@@ -490,44 +584,203 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                       ),
                       onTap: () async {
                         final now = DateTime.now();
+
+                        // ✅ Determinar días mínimos según descripción
+                        final tieneDescripcion = _descripcion.trim().isNotEmpty;
+                        final diasMinimos = tieneDescripcion ? 5 : 3;
+
+                        // Fecha mínima permitida
+                        final fechaMinima = now.add(
+                          Duration(days: diasMinimos),
+                        );
+
                         final fecha = await showDatePicker(
                           context: context,
-                          initialDate: now.add(const Duration(days: 1)),
-                          firstDate: now,
+                          initialDate: fechaMinima,
+                          firstDate: fechaMinima,
                           lastDate: DateTime(now.year + 2),
+                          helpText: tieneDescripcion
+                              ? 'Productos personalizados (mín. 5 días)'
+                              : 'Productos prediseñados (mín. 3 días)',
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.light(
+                                  primary: Colors.pinkAccent,
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
                         );
-                        if (fecha != null)
+
+                        if (fecha != null) {
                           setState(() => _fechaEntrega = fecha);
+                        }
                       },
                     ),
                     const SizedBox(height: 12),
 
-                    // DESCRIPCION
                     TextFormField(
                       decoration: pastelInputDecoration(
-                        "Descripción",
+                        "Descripción ${_descripcion.trim().isEmpty ? '(opcional - 3 días)' : '(+2 días entrega)'}",
                         Icons.description,
                       ),
+                      onChanged: (val) {
+                        setState(() {
+                          _descripcion = val;
+                          // ✅ Si cambia la descripción, limpiar fecha para que revalide
+                          if (_fechaEntrega != null) {
+                            final ahora = DateTime.now();
+                            final diferencia = _fechaEntrega!
+                                .difference(ahora)
+                                .inDays;
+                            final nuevoMinimo = val.trim().isNotEmpty ? 5 : 3;
+                            if (diferencia < nuevoMinimo) {
+                              _fechaEntrega = null; // Limpiar fecha inválida
+                            }
+                          }
+                        });
+                      },
                       onSaved: (val) => _descripcion = val ?? '',
                     ),
                     const SizedBox(height: 12),
 
-                    // SUBIR IMAGEN
-                    ElevatedButton.icon(
-                      style: pastelButtonStyle(),
-                      onPressed: _subiendoImagen
-                          ? null
-                          : _subirImagenACloudinary,
-                      icon: const Icon(Icons.cloud_upload),
-                      label: Text(
-                        _subiendoImagen ? "Subiendo..." : "Subir comprobante",
+                    // ✅ CAMBIO 4: Solo mostrar si hay productos
+                    if (productosSeleccionados.isNotEmpty) ...[
+                      TextFormField(
+                        controller: _valorInicialController,
+                        keyboardType: TextInputType.number,
+                        decoration: pastelInputDecoration(
+                          "Valor Inicial (mínimo: ${formatCOP(_totalPedido * 0.5)})",
+                          Icons.attach_money,
+                        ),
+                        onChanged: (valor) {
+                          // Remover todo excepto números
+                          final soloNumeros = valor.replaceAll(
+                            RegExp(r'[^\d]'),
+                            '',
+                          );
+
+                          if (soloNumeros.isEmpty) {
+                            setState(() {
+                              _valorInicial = 0;
+                              _valorRestante = _totalPedido;
+                            });
+                            return;
+                          }
+
+                          // Limitar a 8 cifras
+                          final numerosLimitados = soloNumeros.length > 8
+                              ? soloNumeros.substring(0, 8)
+                              : soloNumeros;
+
+                          final numero = double.tryParse(numerosLimitados) ?? 0;
+
+                          setState(() {
+                            _valorInicial = numero;
+                            _valorRestante = _totalPedido - numero.round();
+                          });
+
+                          // Formatear con separadores de miles SIN "COP"
+                          final formatter = NumberFormat('#,###', 'es_CO');
+                          final textoFormateado = formatter.format(numero);
+
+                          // Actualizar el texto
+                          _valorInicialController?.value = TextEditingValue(
+                            text: textoFormateado,
+                            selection: TextSelection.collapsed(
+                              offset: textoFormateado.length,
+                            ),
+                          );
+                        },
+                        onEditingComplete: () {
+                          final minimo = (_totalPedido * 0.5);
+
+                          if (_valorInicial == 0) {
+                            mostrarAlerta(
+                              context: context,
+                              titulo: '⚠️',
+                              mensaje:
+                                  'Debes ingresar el pago inicial (mínimo ${formatCOP(minimo)})',
+                            );
+                            setState(() {
+                              _valorInicial = minimo;
+                              _valorRestante = _totalPedido - minimo.round();
+                              final formatter = NumberFormat('#,###', 'es_CO');
+                              _valorInicialTexto = formatter.format(minimo);
+                              _valorInicialController?.text =
+                                  _valorInicialTexto;
+                            });
+                          } else if (_valorInicial < minimo) {
+                            mostrarAlerta(
+                              context: context,
+                              titulo: '⚠️',
+                              mensaje:
+                                  'El pago inicial mínimo es ${formatCOP(minimo)} (50% del total)',
+                            );
+                            setState(() {
+                              _valorInicial = minimo;
+                              _valorRestante = _totalPedido - minimo.round();
+                              final formatter = NumberFormat('#,###', 'es_CO');
+                              _valorInicialTexto = formatter.format(minimo);
+                              _valorInicialController?.text =
+                                  _valorInicialTexto;
+                            });
+                          } else if (_valorInicial > _totalPedido) {
+                            mostrarAlerta(
+                              context: context,
+                              titulo: '⚠️',
+                              mensaje:
+                                  'El pago inicial no puede superar el total (${formatCOP(_totalPedido)})',
+                            );
+                            setState(() {
+                              _valorInicial = _totalPedido.toDouble();
+                              _valorRestante = 0;
+                              final formatter = NumberFormat('#,###', 'es_CO');
+                              _valorInicialTexto = formatter.format(
+                                _totalPedido,
+                              );
+                              _valorInicialController?.text =
+                                  _valorInicialTexto;
+                            });
+                          } else {
+                            // Si el valor es válido, solo formatearlo
+                            setState(() {
+                              final formatter = NumberFormat('#,###', 'es_CO');
+                              _valorInicialTexto = formatter.format(
+                                _valorInicial,
+                              );
+                              _valorInicialController?.text =
+                                  _valorInicialTexto;
+                            });
+                          }
+
+                          FocusScope.of(context).unfocus();
+                        },
                       ),
-                    ),
-                    if (_comprobantePago.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text("✅ Imagen subida: $_comprobantePago"),
+                      const SizedBox(height: 20),
+                    ],
+
+                    // ✅ Solo mostrar si el método de pago NO es Efectivo
+                    if (_metodoPago != null && _metodoPago != 'Efectivo') ...[
+                      ElevatedButton.icon(
+                        style: pastelButtonStyle(),
+                        onPressed: _subiendoImagen
+                            ? null
+                            : _subirImagenACloudinary,
+                        icon: const Icon(Icons.cloud_upload),
+                        label: Text(
+                          _subiendoImagen ? "Subiendo..." : "Subir comprobante",
+                        ),
                       ),
+                      if (_comprobantePago.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text("✅ Imagen subida: $_comprobantePago"),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
 
                     const SizedBox(height: 20),
 
@@ -540,7 +793,6 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
                     ),
                     const SizedBox(height: 6),
 
-                    // Lista de productos seleccionados
                     ...productosSeleccionados.map((p) {
                       int index = productosSeleccionados.indexOf(p);
                       return Card(
@@ -597,7 +849,6 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
 
                     const SizedBox(height: 12),
 
-                    // BOTÓN AGREGAR PRODUCTO -> abre modal categoría->producto
                     ElevatedButton.icon(
                       style: pastelButtonStyle(),
                       onPressed: _seleccionarProducto,
@@ -607,18 +858,20 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
 
                     const SizedBox(height: 20),
 
-                    // TOTALES
-                    Text(
-                      "💰 Valor inicial: ${formatCOP(_valorInicial)}",
-                      style: const TextStyle(color: Colors.green),
-                    ),
                     Text(
                       "💸 Restante: ${formatCOP(_valorRestante)}",
-                      style: const TextStyle(color: Colors.orange),
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontSize: 16,
+                      ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
                       "🧾 Total: ${formatCOP(_totalPedido)}",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
 
                     const SizedBox(height: 20),
@@ -639,16 +892,16 @@ class _CrearPedidoPageState extends State<CrearPedidoPage> {
   }
 }
 
-// -------------------- WIDGET MODAL (categoría -> producto) --------------------
+// -------------------- WIDGET MODAL --------------------
 class CategoryProductPicker extends StatefulWidget {
   final List<dynamic> categorias;
   final List<dynamic> productos;
-  final List<Map<String, dynamic>> productosSeleccionados; // 👈 NUEVO
+  final List<Map<String, dynamic>> productosSeleccionados;
 
   const CategoryProductPicker({
     required this.categorias,
     required this.productos,
-    required this.productosSeleccionados, // 👈 NUEVO
+    required this.productosSeleccionados,
     super.key,
   });
 
@@ -669,7 +922,7 @@ class _CategoryProductPickerState extends State<CategoryProductPicker> {
   }
 
   void filtrar(String q) {
-    if (!mounted) return; // 👈 FIX
+    if (!mounted) return;
     setState(() {
       searchText = q;
       if (mostrandoProductos) {
@@ -710,7 +963,6 @@ class _CategoryProductPickerState extends State<CategoryProductPicker> {
         ? "Selecciona producto"
         : "Selecciona categoría";
     final size = MediaQuery.of(context).size;
-
     return SafeArea(
       child: Container(
         height: size.height * 0.72,
@@ -792,54 +1044,112 @@ class _CategoryProductPickerState extends State<CategoryProductPicker> {
                         itemCount: listaMostrar.length,
                         itemBuilder: (context, index) {
                           final item = listaMostrar[index];
+
+                          // ✅ NUEVO: Verificar si es producto y si está agotado
+                          final esProducto = mostrandoProductos;
+                          final cantidad = esProducto
+                              ? (item['Cantidad'] ?? 0)
+                              : 0;
+                          final estaAgotado = esProducto && cantidad <= 0;
+
                           return Card(
-                            color: const Color(0xFFFFF0F5),
+                            color: estaAgotado
+                                ? Colors
+                                      .grey
+                                      .shade300 // Color gris para agotados
+                                : const Color(0xFFFFF0F5),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                             margin: const EdgeInsets.symmetric(vertical: 6),
                             child: ListTile(
-                              title: Text(
-                                mostrandoProductos
-                                    ? item['Nombre'] ?? 'Sin nombre'
-                                    : item['CategoriaProducto1'] ??
-                                          'Sin nombre',
+                              enabled:
+                                  !estaAgotado, // ✅ Deshabilitar si está agotado
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      mostrandoProductos
+                                          ? item['Nombre'] ?? 'Sin nombre'
+                                          : item['CategoriaProducto1'] ??
+                                                'Sin nombre',
+                                      style: TextStyle(
+                                        color: estaAgotado
+                                            ? Colors.grey.shade600
+                                            : Colors.black,
+                                        decoration: estaAgotado
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                  // ✅ Badge de AGOTADO
+                                  if (estaAgotado)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade400,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'AGOTADO',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                               subtitle: Text(
                                 mostrandoProductos
-                                    ? "Precio: ${formatCOP(item['Precio'])}"
+                                    ? estaAgotado
+                                          ? "Sin stock disponible"
+                                          : "Precio: ${formatCOP(item['Precio'])} | Stock: $cantidad"
                                     : (item['Descripcion'] ?? ""),
+                                style: TextStyle(
+                                  color: estaAgotado
+                                      ? Colors.grey.shade600
+                                      : Colors.black87,
+                                ),
                               ),
+                              onTap: estaAgotado
+                                  ? null // ✅ No hacer nada si está agotado
+                                  : () {
+                                      if (mostrandoProductos) {
+                                        Navigator.pop(
+                                          context,
+                                          Map<String, dynamic>.from(item),
+                                        );
+                                      } else {
+                                        final idCat =
+                                            item['IdCategoriaProducto'];
+                                        final prods = widget.productos
+                                            .where(
+                                              (p) =>
+                                                  p['CategoriaProducto'] ==
+                                                      idCat &&
+                                                  !widget.productosSeleccionados
+                                                      .any(
+                                                        (sel) =>
+                                                            sel['IdProducto'] ==
+                                                            p['IdProducto'],
+                                                      ),
+                                            )
+                                            .toList();
 
-                              onTap: () {
-                                if (mostrandoProductos) {
-                                  Navigator.pop(
-                                    context,
-                                    Map<String, dynamic>.from(item),
-                                  );
-                                } else {
-                                  // pasar a productos de esa categoría
-                                  final idCat = item['IdCategoriaProducto'];
-                                  final prods = widget.productos
-                                      .where(
-                                        (p) =>
-                                            p['CategoriaProducto'] == idCat &&
-                                            !widget.productosSeleccionados.any(
-                                              (sel) =>
-                                                  sel['IdProducto'] ==
-                                                  p['IdProducto'],
-                                            ), // 👈 FILTRO NUEVO
-                                      )
-                                      .toList();
-
-                                  setState(() {
-                                    categoriaSeleccionadaId = idCat;
-                                    listaMostrar = prods;
-                                    mostrandoProductos = true;
-                                    searchText = "";
-                                  });
-                                }
-                              },
+                                        setState(() {
+                                          categoriaSeleccionadaId = idCat;
+                                          listaMostrar = prods;
+                                          mostrandoProductos = true;
+                                          searchText = "";
+                                        });
+                                      }
+                                    },
                             ),
                           );
                         },

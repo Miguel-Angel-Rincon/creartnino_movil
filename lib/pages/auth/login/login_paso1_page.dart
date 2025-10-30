@@ -18,35 +18,238 @@ class _LoginPaso1PageState extends State<LoginPaso1Page> {
   bool _loading = false;
 
   Future<void> enviarCodigo() async {
+    // Validar campos vacíos
+    if (correoController.text.trim().isEmpty ||
+        contrasenaController.text.trim().isEmpty) {
+      _mostrarDialogo(
+        "Campos vacíos",
+        "Por favor completa todos los campos.",
+        Icons.warning,
+        Colors.orange,
+      );
+      return;
+    }
+
     setState(() => _loading = true);
 
-    final url = Uri.parse(
-      "http://www.apicreartnino.somee.com/api/Auth/LoginPaso1",
-    );
-
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "correo": correoController.text,
-        "contrasena": contrasenaController.text,
-      }),
-    );
-
-    setState(() => _loading = false);
-
-    if (response.statusCode == 200) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LoginPaso2Page(correo: correoController.text),
-        ),
+    try {
+      // 1️⃣ Primero verificar el estado del usuario
+      final usuariosUrl = Uri.parse(
+        "https://www.apicreartnino.somee.com/api/Usuarios/Lista",
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ ${jsonDecode(response.body)['mensaje']}")),
+
+      final usuariosResponse = await http.get(usuariosUrl);
+
+      if (usuariosResponse.statusCode != 200) {
+        throw Exception("No se pudo verificar el usuario");
+      }
+
+      final List<dynamic> listaUsuarios = jsonDecode(usuariosResponse.body);
+
+      // Buscar el usuario por correo
+      final usuario = listaUsuarios.firstWhere(
+        (u) =>
+            u['Correo']?.toString().toLowerCase() ==
+            correoController.text.trim().toLowerCase(),
+        orElse: () => null,
+      );
+
+      if (usuario == null) {
+        setState(() => _loading = false);
+        _mostrarDialogo(
+          "Error",
+          "Usuario no encontrado",
+          Icons.error,
+          Colors.red,
+        );
+        return;
+      }
+
+      // 2️⃣ Verificar si el usuario está activo
+      if (usuario['Estado'] == false) {
+        setState(() => _loading = false);
+        _mostrarDialogoEstadoInactivo();
+        return;
+      }
+
+      // 3️⃣ Si está activo, proceder con el login normal
+      final loginUrl = Uri.parse(
+        "http://www.apicreartnino.somee.com/api/Auth/LoginPaso1",
+      );
+
+      final loginResponse = await http.post(
+        loginUrl,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "correo": correoController.text.trim(),
+          "contrasena": contrasenaController.text,
+        }),
+      );
+
+      setState(() => _loading = false);
+
+      if (loginResponse.statusCode == 200) {
+        _mostrarDialogo(
+          "Verificación exitosa",
+          "Ahora ingresa el código enviado a tu correo.",
+          Icons.check_circle,
+          Colors.green,
+        );
+
+        // Navegar a la siguiente pantalla
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                LoginPaso2Page(correo: correoController.text.trim()),
+          ),
+        );
+      } else {
+        final errorData = jsonDecode(loginResponse.body);
+        _mostrarDialogo(
+          "Error",
+          errorData['mensaje'] ?? "Credenciales inválidas",
+          Icons.error,
+          Colors.red,
+        );
+      }
+    } catch (e) {
+      setState(() => _loading = false);
+      _mostrarDialogo(
+        "Error de conexión",
+        "Hubo un problema al conectar con el servidor. Intenta nuevamente.",
+        Icons.error,
+        Colors.red,
       );
     }
+  }
+
+  // Diálogo personalizado para cuenta desactivada
+  void _mostrarDialogoEstadoInactivo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: const [
+            Icon(Icons.block, color: Colors.red, size: 28),
+            SizedBox(width: 10),
+            Text(
+              "Acceso denegado",
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Tu cuenta ha sido desactivada",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "Por favor, contacta al administrador para más información.",
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: const [
+                      Icon(Icons.phone, size: 18, color: Colors.pinkAccent),
+                      SizedBox(width: 8),
+                      Text(
+                        "Teléfono:",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text("+57 324 627 2022"),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: const [
+                      Icon(Icons.email, size: 18, color: Colors.pinkAccent),
+                      SizedBox(width: 8),
+                      Text(
+                        "Correo:",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text("creartnino23@gmail.com"),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text("Cerrar"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Diálogo genérico para otros mensajes
+  void _mostrarDialogo(
+    String titulo,
+    String mensaje,
+    IconData icono,
+    Color color,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(icono, color: color, size: 28),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                titulo,
+                style: TextStyle(fontWeight: FontWeight.bold, color: color),
+              ),
+            ),
+          ],
+        ),
+        content: Text(mensaje),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              backgroundColor: color,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -104,8 +307,6 @@ class _LoginPaso1PageState extends State<LoginPaso1Page> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 20),
-
                         const SizedBox(height: 20),
                         const Text(
                           "Bienvenid@s CreartNino",
@@ -228,12 +429,8 @@ class _LoginPaso1PageState extends State<LoginPaso1Page> {
           end: Alignment.centerRight,
         ),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 6,
-            offset: const Offset(0, 3),
-          ),
+        boxShadow: const [
+          BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 3)),
         ],
       ),
       child: ElevatedButton.icon(

@@ -346,6 +346,10 @@ class _PedidosPageClienteState extends State<PedidosPageCliente> {
     if (nombre.contains('proceso de entrega')) return Colors.cyan;
     if (nombre.contains('entregado')) return Colors.green;
     if (nombre.contains('anulado')) return Colors.redAccent;
+    if (nombre.contains('venta directa'))
+      return const Color.fromARGB(255, 242, 68, 248);
+    if (nombre.contains('pedido pagado'))
+      return const Color.fromARGB(255, 12, 89, 255);
     return Colors.grey;
   }
 
